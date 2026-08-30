@@ -36,23 +36,24 @@
  <div class="menuBox">
   <div class="menuHead"><h2>Menu NestMap</h2><button id="closeMenu" class="secondary">×</button></div>
   <div class="menuQuickRow"><button id="offlineBtn" class="menuItem">💾 Przygotuj mapę offline</button><button id="exportCurrentArea" class="menuItem">📐 Eksportuj widoczny fragment</button></div>
-  <div class="visibilityRow three"><button id="visibleOnlyBtn" class="menuItem visibilityBtn">Widoczne</button><button id="hiddenOnlyBtn" class="menuItem visibilityBtn">Ukryte</button><button id="allVisibilityBtn" class="menuItem visibilityBtn">Wszystkie</button></div>
   <div class="visibilityRow two"><button id="toggleNestsBtn" class="menuItem visibilityBtn">👁️ Ukryj gniazda</button><button id="revealNestsBtn" class="menuItem visibilityBtn">👁️ Odkryj gniazda</button></div>
   <button id="deleteVisibleBtn" class="menuItem dangerMenuItem">🗑️ Usuń gniazda z widocznego fragmentu mapy</button>
   <div class="menuSection"><h3>Filtruj gniazda</h3>
    <input id="nestSearch" type="search" placeholder="Nazwa gatunku, kod lub np. CCC-03">
+   <label class="yearFilterLabel"><strong>Rok</strong><select id="yearFilter"><option value="">Wszystkie lata</option></select></label>
    <div id="speciesFilterList" class="speciesFilterList" hidden></div>
    <div class="filterActions"><button id="showAllNests" class="secondary">Pokaż wszystkie</button><button id="clearNestFilter" class="secondary">Wyczyść wybór</button></div>
    
   </div>
   <div class="menuSection"><h3>Gniazda</h3><button id="countSpeciesBtn" class="menuItem">🔢 Liczba gniazd wg gatunku</button><div id="speciesCountBox" class="speciesCountBox" hidden></div></div>
-  <div class="menuSection"><h3>Eksport</h3><button id="exportCsv" class="menuItem">📤 CSV</button><button id="exportKmz" class="menuItem">📍 KMZ</button><button id="exportShp" class="menuItem">🗺️ SHP</button></div>
+  <div class="menuSection"><h3>Eksport</h3><div class="exportRow"><button id="exportCsv" class="menuItem">📤 CSV</button><button id="exportKmz" class="menuItem">📍 KMZ</button><button id="exportShp" class="menuItem">🗺️ SHP</button></div><div class="muted exportHint">Eksport uwzględnia wybrany rok oraz widoczny fragment mapy, jeśli został ustawiony.</div></div>
   
  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="data.js"></script><script src="app.js"></script>
+<script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));}</script>
 <script>
 /* NestMap v8.6.1 - collapsible species count */
 (function(){

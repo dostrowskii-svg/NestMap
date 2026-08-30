@@ -33,3 +33,6 @@
 .visibilityRow.two{grid-template-columns:1fr 1fr;margin-top:6px}
 .dangerMenuItem{background:#fff3f3!important;border-color:#e5bcbc!important;color:#7a2020!important;text-align:center!important}
 @media(max-width:600px){.nestActions{gap:5px}.nestActions button{padding:9px 10px;font-size:13px}.visibilityRow.three .menuItem{font-size:12px;padding:9px 4px}}
+
+/* NestMap v8.9 */
+html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:980px}#mapWrap,#map{max-width:100%;width:100%}.yearFilterLabel{margin-top:9px}.yearFilterLabel select{font-weight:700}.exportRow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.exportRow .menuItem{margin:0;text-align:center}.exportHint{margin-top:7px}@media(max-width:600px){main{padding-left:8px;padding-right:8px}.card{border-radius:10px;padding:10px}.exportRow{grid-template-columns:repeat(3,1fr);gap:5px}.exportRow .menuItem{font-size:12px;padding:10px 4px}}
