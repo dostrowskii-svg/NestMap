@@ -26,3 +26,10 @@
 .selectedObs{font-weight:700;color:#1f2a24;font-size:14px}.strongLabel{font-weight:700;color:#1f2a24}.formActions{align-items:center}.formActions button{white-space:nowrap}
 
 .menuQuickRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.menuQuickRow .menuItem{margin:0}.emphFields select,.emphField select,.emphField textarea,.emphField .selectedObs{font-weight:700;color:#1f2a24;opacity:1}.emphField .criterionDesc{font-weight:400}.historyControl h4{margin:0 0 7px;font-size:16px;font-weight:700}.historyControl b{font-weight:700}.historyDesc{margin-top:4px}.historyPhotos{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.historyPhotos img{width:70px;height:70px;object-fit:cover;border-radius:7px;border:1px solid #ccd8d1}@media(max-width:600px){.menuQuickRow{grid-template-columns:1fr 1fr}.menuQuickRow .menuItem{font-size:13px;padding:10px 7px}}
+/* NestMap v8.8 */
+.nestActions{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
+.nestActions button{flex:0 0 auto}
+.visibilityRow.three{grid-template-columns:repeat(3,1fr)}
+.visibilityRow.two{grid-template-columns:1fr 1fr;margin-top:6px}
+.dangerMenuItem{background:#fff3f3!important;border-color:#e5bcbc!important;color:#7a2020!important;text-align:center!important}
+@media(max-width:600px){.nestActions{gap:5px}.nestActions button{padding:9px 10px;font-size:13px}.visibilityRow.three .menuItem{font-size:12px;padding:9px 4px}}
