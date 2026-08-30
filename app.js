@@ -36,7 +36,7 @@ function renderControl(){const n=nests.find(x=>x.id===currentNestId);if(!n)retur
  html+=`<label class="emphField"><strong>Kryterium lęgowości</strong> <span class="hint">(opcjonalne)</span><select id="criterion"><option value="">Nie wybrano</option>${CRITERIA.map(x=>`<option value="${esc(x.code)}" ${x.code===c.criterion?'selected':''}>${esc(x.code)}</option>`).join('')}</select><div class="criterionDesc hint" id="criterionDesc">${c.criterion?esc((CRITERIA.find(x=>x.code===c.criterion)||{}).desc||''):'Wybierz kryterium, aby zobaczyć opis.'}</div></label>`;
  html+=`<label class="emphField"><strong>Obserwacje</strong> <button type="button" class="secondary obsPickerBtn" id="obsPickerBtn">Wybierz obserwacje</button><div class="selectedObs" id="selectedObs">${(c.observations||[]).length?c.observations.map(esc).join(', '):'Nie wybrano'}</div><div id="obsPicker" class="obsPicker" hidden><div class="obsPickerBox"><div class="obsPickerHead"><span>Wybierz obserwacje</span><button type="button" class="secondary" id="obsClose">Gotowe</button></div><div class="obsChoices">${OBS.map((x,i)=>`<label><input type="checkbox" data-obs="${i}" ${c.observations?.includes(x)?'checked':''}>${esc(x)}</label>`).join('')}</div></div></div></label>`;
  html+=`<label><strong>Drzewo</strong> <span class="hint">(opcjonalne)</span><div class="autocomplete"><input id="treeInput" placeholder="nazwa lub kod" value="${esc(c.tree||'')}"><div id="treeSug" class="suggestions" hidden></div></div></label><div class="hint strongLabel" id="treeHint">${c.treeCode?`Kod drzewa: ${esc(c.treeCode)}`:'Kod drzewa pojawi się po wyborze.'}</div>`;
- html+=`<label><div class="dateTimeRow"><input id="date" type="date" value="${esc(c.date)}" readonly><input id="time" type="time" value="${esc(c.time)}" readonly></div></label>`;
+ html+=`<div class="dateTimeRow"><input id="date" type="date" value="${esc(c.date)}" readonly aria-label="Data"><input id="time" type="time" value="${esc(c.time)}" readonly aria-label="Czas"></div>`;
  const d=userPos&&n.lat?distMeters(userPos,[n.lat,n.lon]):null;html+=`<label><strong>Odległość</strong><input id="distanceValue" value="${d==null?'—':(d<1000?Math.round(d)+' m':(d/1000).toFixed(2)+' km')}" readonly></label>`;
  html+=`<label><strong>Zdjęcia kontroli ${currentControl+1}</strong></label><div class="photoButtons"><button type="button" class="secondary" id="cameraBtn">📷 Zrób zdjęcie</button><button type="button" class="secondary" id="galleryBtn">🖼️ Galeria</button></div><input id="cameraInput" type="file" accept="image/*" capture="environment" hidden><input id="galleryInput" type="file" accept="image/*" multiple hidden><div id="photoPreview" class="photoPreview"></div><label class="emphField"><strong>Uwagi</strong><textarea id="notes" rows="3">${esc(c.notes)}</textarea></label>`;
  $('controlPanel').innerHTML=html;bindInputs(n,c);renderPhotos(c);setEditable(editing || !c.saved || !!n.draft);}
@@ -73,12 +73,15 @@ function exportKMZ(){
  const placemarks=[],files=[];
  const xml=v=>esc(v==null?'':String(v));
  const text=v=>String(v==null||v===''?'—':v);
+ const row=(label,value)=>`<tr><td><b>${xml(label)}</b></td><td>${xml(text(value))}</td></tr>`;
  for(const n of list){
-  const rows=[
-   ['Kod gniazda',n.label],['Gatunek',n.bird],['Kod gatunku',n.birdCode],
-   ['GPS – szerokość',n.lat],['GPS – długość',n.lon]
-  ];
-  const data=[];
+  const rows=[];
+  rows.push(['Kod gniazda',n.label]);
+  rows.push(['Gatunek',n.bird]);
+  rows.push(['Kod gatunku',n.birdCode]);
+  rows.push(['GPS – szerokość',n.lat]);
+  rows.push(['GPS – długość',n.lon]);
+  const photoRefs=[];
   for(let i=0;i<4;i++){
    const c=controlExportData(n,i);
    rows.push([`Kontrola ${i+1} – kryterium`,c.criterion]);
@@ -96,24 +99,17 @@ function exportKMZ(){
     const p=n.controls[i].photos[pi],path=exportPhotoFileName(n,i,pi),bytes=photoDataBytes(p.data);
     if(bytes){
      files.push({name:path,data:bytes});
+     photoRefs.push({label:`Kontrola ${i+1} – zdjęcie ${pi+1}`,name:p.name||path,path});
      rows.push([`Kontrola ${i+1} – zdjęcie ${pi+1}`,p.name||path]);
     }
    }
-   data.push(c);
   }
-  // Plain-text description: Google Earth clients reliably display this even when they strip HTML tables.
-  const plain=[
-   `GNIAZDO: ${text(n.label)}`,
-   `Gatunek: ${text(n.bird)}`,
-   `Kod gatunku: ${text(n.birdCode)}`,
-   `GPS – szerokość: ${text(n.lat)}`,
-   `GPS – długość: ${text(n.lon)}`,
-   '',
-   ...rows.slice(5).map(r=>`${r[0]}: ${text(r[1])}`)
-  ].join('\\n');
-  const html='<h3>NestMap – pełny formularz gniazda</h3>'+rows.map(r=>`<p><b>${xml(r[0])}:</b> ${xml(r[1])}</p>`).join('');
-  const ext=rows.map(r=>`<Data name="${xml(r[0])}"><value>${xml(r[1])}</value></Data>`).join('');
-  const desc=`<![CDATA[<div style="font-family:Arial,sans-serif;white-space:normal">${html}<hr><pre style="white-space:pre-wrap">${xml(plain)}</pre></div>]]>`;
+  // Put the complete form into the KML description as ordinary HTML/text.
+  // This is deliberately simple so Google Earth and other KML readers display it reliably.
+  const table='<table border="1" cellpadding="5" cellspacing="0">'+rows.map(r=>row(r[0],r[1])).join('')+'</table>';
+  const imgs=photoRefs.length?'<h3>Zdjęcia</h3>'+photoRefs.map(p=>`<p><b>${xml(p.label)}</b><br><img src="${xml(p.path)}" width="600"></p>`).join(''):'';
+  const desc=`<![CDATA[<h2>NestMap – pełny formularz</h2>${table}${imgs}]]>`;
+  const ext=rows.map(r=>`<Data name="${xml(r[0])}"><displayName>${xml(r[0])}</displayName><value>${xml(text(r[1]))}</value></Data>`).join('');
   placemarks.push(`<Placemark><name>${xml(n.label||'Gniazdo')}</name><description>${desc}</description><ExtendedData>${ext}</ExtendedData><Point><coordinates>${xml(n.lon)},${xml(n.lat)},0</coordinates></Point></Placemark>`);
  }
  const kml=`<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>NestMap – pełne dane formularza</name>${placemarks.join('')}</Document></kml>`;
