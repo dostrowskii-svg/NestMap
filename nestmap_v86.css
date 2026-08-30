@@ -1,0 +1,7 @@
+
+/* NestMap v8.6 */
+.nm-cancel-inline{margin-left:6px}
+.nm-confirmed-form select:has(option:checked:not([value=""])),
+.nm-confirmed-form .selected-observation,
+.nm-confirmed-form .selected-tree-code,
+.nm-confirmed-form [data-selected="true"]{font-weight:700 !important;color:inherit !important;opacity:1 !important}

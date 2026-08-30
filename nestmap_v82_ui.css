@@ -1,0 +1,4 @@
+/* v8.5: fixed map controls inside map container; no +/- */
+.leaflet-control-zoom{display:none!important}
+.mapFixedControls{position:absolute!important;right:10px;top:10px;z-index:1200;display:flex;flex-direction:column;gap:6px}
+.mapFixedControls .mapCtl{position:relative!important}

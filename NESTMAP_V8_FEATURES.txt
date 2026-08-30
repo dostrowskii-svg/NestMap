@@ -1,0 +1,4 @@
+NestMap v8 – requested changes
+1. Saved-nest map filter: select one or multiple species; show all; clear selection; search species.
+2. CSV header: use 'drzewo' instead of 'gatunek drzewa'.
+3. Filtering only changes map visibility; it must not delete or alter saved nest data.

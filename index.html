@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f6f43"><meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest"><title>NestMap</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="nestmap_v82_ui.css">
+<link rel="stylesheet" href="nestmap_v86.css">
+</head>
+<body>
+<header><div><h1>🪶 NestMap</h1><p>terenowa ewidencja gniazd ptaków</p></div></header>
+<main>
+<section class="card mapCard"><div class="sectionHead"><h2>Mapa</h2><span id="mapStatus" class="muted">Przesuń mapę tak, aby krzyżyk wskazywał miejsce gniazda.</span></div>
+<div id="mapWrap"><div id="map"></div><div class="crosshair">＋</div>
+<div class="mapFixedControls">
+  <button id="mapTypeBtn" class="mapCtl">🗺️ Orto / ulice</button>
+  <button id="locateBtn" class="mapCtl">📍 Moja lokalizacja</button>
+  <button id="menuBtn" class="mapCtl">☰ Menu</button>
+</div>
+</div>
+<div id="mapMode" class="mapMode"><span>📍 Krzyżyk wskazuje miejsce gniazda.</span><button id="registerBtn" class="primary">Rejestruj</button></div>
+</section>
+
+<section class="card" id="nestCard" hidden>
+  <div class="sectionHead"><h2 id="nestTitle">Kontrola 1</h2><span id="nestCode" class="codeBadge"></span></div><div class="formActions"><button id="nestVisibilityBtn" class="secondary">🙈 Ukryj gniazdo</button><button id="historyBtn" class="secondary">📚 Historia</button><button id="editNestBtn" class="secondary">✏️ Edytuj</button><button id="deleteNestBtn" class="danger">🗑️ Usuń</button></div>
+  <div id="historyPanel" class="historyPanel" hidden></div>
+  <div class="birdFixed" id="birdFixed"></div>
+  <div class="tabs"><button class="tab active" data-tab="0">Kontrola 1</button><button class="tab" data-tab="1">Kontrola 2</button><button class="tab" data-tab="2">Kontrola 3</button><button class="tab" data-tab="3">Kontrola 4</button></div>
+  <div id="controlPanel"></div>
+  <div class="formActions"><button id="saveControl" class="primary">💾 Zapisz kontrolę</button><button id="cancelNest" class="secondary">Anuluj</button><button id="closeNest" class="secondary">← Wróć do mapy</button></div>
+</section>
+
+<div id="menuPanel" class="menuPanel" hidden>
+ <div class="menuBox">
+  <div class="menuHead"><h2>Menu NestMap</h2><button id="closeMenu" class="secondary">×</button></div>
+  <div class="menuQuickRow"><button id="offlineBtn" class="menuItem">💾 Przygotuj mapę offline</button><button id="exportCurrentArea" class="menuItem">📐 Eksportuj widoczny fragment</button></div>
+  <div class="visibilityRow"><button id="toggleNestsBtn" class="menuItem visibilityBtn">👁️ Ukryj gniazda</button><button id="revealNestsBtn" class="menuItem visibilityBtn">👁️ Odkryj gniazda</button></div>
+  <div class="menuSection"><h3>Filtruj gniazda</h3>
+   <input id="nestSearch" type="search" placeholder="Nazwa gatunku, kod lub np. CCC-03">
+   <div id="speciesFilterList" class="speciesFilterList" hidden></div>
+   <div class="filterActions"><button id="showAllNests" class="secondary">Pokaż wszystkie</button><button id="clearNestFilter" class="secondary">Wyczyść wybór</button></div>
+   <div class="visibilityFilter"><span>Widoczność:</span><button id="visibleOnlyBtn" class="secondary">Widoczne</button><button id="hiddenOnlyBtn" class="secondary">Ukryte</button><button id="allVisibilityBtn" class="secondary">Wszystkie</button></div>
+  </div>
+  <div class="menuSection"><h3>Gniazda</h3><button id="countSpeciesBtn" class="menuItem">🔢 Liczba gniazd wg gatunku</button><div id="speciesCountBox" class="speciesCountBox" hidden></div></div>
+  <div class="menuSection"><h3>Eksport</h3><button id="exportCsv" class="menuItem">📤 CSV</button><button id="exportKmz" class="menuItem">📍 KMZ</button><button id="exportShp" class="menuItem">🗺️ SHP</button></div>
+  
+ </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="data.js"></script><script src="app.js"></script>
+<script>
+/* NestMap v8.6.1 - collapsible species count */
+(function(){
+  function norm(t){return String(t||"").trim().toLocaleLowerCase("pl-PL");}
+  function initSpeciesCountToggle(){
+    var nodes=document.querySelectorAll("button,a,[role='button'],summary,div");
+    Array.prototype.forEach.call(nodes,function(el){
+      if(el.dataset.nmCountToggle==="1") return;
+      var t=norm(el.textContent);
+      if(t!=="liczba gniazd wg gatunku") return;
+      el.dataset.nmCountToggle="1";
+      el.setAttribute("aria-expanded","false");
+      el.addEventListener("click",function(ev){
+        var panel=el.nextElementSibling;
+        if(!panel) return;
+        var hidden=panel.style.display==="none";
+        panel.style.display=hidden ? "" : "none";
+        el.setAttribute("aria-expanded", hidden ? "true" : "false");
+      });
+    });
+  }
+  initSpeciesCountToggle();
+  new MutationObserver(initSpeciesCountToggle).observe(document.documentElement,{subtree:true,childList:true});
+})();
+</script>
+</body></html>

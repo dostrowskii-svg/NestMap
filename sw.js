@@ -1,0 +1,2 @@
+const CACHE="nestmap-static-v2"; self.addEventListener("install",e=>e.waitUntil(caches.open(CACHE))); self.addEventListener("activate",e=>e.waitUntil(self.clients.claim()));
+self.addEventListener("message",e=>{if(e.data?.type==="CACHE_URLS") e.waitUntil(caches.open(CACHE).then(c=>Promise.all((e.data.urls||[]).map(async u=>{try{const r=await fetch(u,{mode:"cors"});if(r.ok)await c.put(u,r.clone())}catch{}}))))});
