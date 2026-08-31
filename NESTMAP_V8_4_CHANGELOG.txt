@@ -1,0 +1,6 @@
+NestMap v8.4
+- Built directly from v8.2 FIXED, which was the last user-confirmed working map base.
+- Removed Pomiar odległości and Nawigacja from the menu for now.
+- Ukryj gniazda and Odkryj gniazda are side-by-side.
+- Hide/reveal handlers simplified.
+- No changes to Leaflet map/tile initialization.

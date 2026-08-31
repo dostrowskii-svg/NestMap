@@ -1,0 +1,1 @@
+v8.6.1: 'Liczba gniazd wg gatunku' can be collapsed again by clicking the same menu item.

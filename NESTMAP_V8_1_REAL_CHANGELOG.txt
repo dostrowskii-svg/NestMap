@@ -1,0 +1,1 @@
+v8.1 REAL: functional saved-nest filter helper added to the application bundle. Search by Polish species name, species code, or full nest code; select one/multiple species; show all; clear selection. CSV wording: drzewo.

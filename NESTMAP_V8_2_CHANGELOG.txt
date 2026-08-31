@@ -1,0 +1,5 @@
+NestMap v8.2
+- Removed visible +/- zoom controls; pinch zoom remains available.
+- Added fixed-control CSS so map controls can remain fixed to the screen.
+- App display uses 'Data; czas'; CSV data/time columns remain separate.
+- Map tile engine intentionally left unchanged from v8.1 base.

@@ -1,0 +1,9 @@
+NestMap v8.6 requested fixes:
+1. Removed duplicate species text under controls.
+2. Added inline Anuluj action beside Edytuj/Usuń where applicable.
+3. Added UI patch for per-control date/time refresh at save (existing save logic preserved; requires app handler integration if source uses custom state).
+4. Removed Nawiguj UI.
+5. Distance kept for form use; map overlay distance hidden.
+6. Filter show action returns to map and applies current species filter (existing filter state preserved).
+7. Global Odkryj gniazda restores per-nest action label to Ukryj gniazdo.
+8. Selected tree code/observations are visually emphasized in confirmed forms.

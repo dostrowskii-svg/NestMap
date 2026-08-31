@@ -1,0 +1,6 @@
+NestMap v8.8
+- Added "Usuń gniazda z widocznego fragmentu mapy" with confirmation.
+- Improved phone location: faster first response, fallback to last known location, and clearer status.
+- Visibility controls are now in one row: Widoczne / Ukryte / Wszystkie.
+- Moved Anuluj next to Edytuj and Usuń in the nest action row; removed duplicate lower Anuluj.
+- Date and time are populated automatically in every control; exact timestamp is refreshed when the control is saved.

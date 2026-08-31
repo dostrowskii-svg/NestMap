@@ -1,0 +1,1 @@
+v8.6.2: real app.js fixes: duplicate species removed; distance only in form; navigation removed; per-control timestamp; global reveal resets hidden state and card label; species Show closes menu and applies map filter; species count toggles open/closed; stronger observation/tree-code display.

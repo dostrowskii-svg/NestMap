@@ -1,0 +1,1 @@
+NestMap v8.5: broad feature pass based on working v8.4. Added annual history, editable lock, cancel/delete, count/chicks, per-control timestamps, tree/observation updates, filter show/count, filtered/viewport CSV/KMZ, continuous location/distance, navigation, photo compression, hide/reveal behavior. SHP remains a placeholder. Map engine retained from v8.4.

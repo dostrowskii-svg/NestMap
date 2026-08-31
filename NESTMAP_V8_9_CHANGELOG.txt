@@ -1,0 +1,10 @@
+NestMap v8.9
+
+1. Filtr gniazd wg roku na podstawie zapisanych kontroli.
+2. Rejestracja nowych gniazd i nowych kontroli bez konieczności klikania Edytuj. Po zapisaniu pola są zablokowane; Edytuj służy do późniejszych zmian.
+3. Zablokowane przewijanie poziome całej aplikacji na telefonie.
+4. Działający eksport SHP jako ZIP zawierający SHP/SHX/DBF/PRJ.
+5. Przygotowanie mapy offline zapisuje kafelki ortofotomapy i OSM dla widocznego obszaru w kilku poziomach zoomu, a service worker korzysta z cache bez internetu.
+6. CSV, KMZ i SHP w jednym wierszu.
+7. Usunięto wiersz Widoczne/Ukryte/Wszystkie.
+8. Eksport widocznego fragmentu obejmuje CSV, KMZ i SHP.

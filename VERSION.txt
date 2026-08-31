@@ -1,0 +1,4 @@
+NestMap – wersja testowa z aktualnym obrazem nagłówka
+Data: 31.08.2026
+
+Baza: NestMap v8.21 (zdjęcia), z zachowaniem formularzy, kontroli 1–4, GPS, zdjęć, filtrowania oraz eksportu CSV/KMZ/SHP.
