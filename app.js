@@ -50,29 +50,53 @@ function setEditable(v){const n=nests.find(x=>x.id===currentNestId);const c=n?.c
 function readPhotos(files,c){[...files].forEach(f=>{if(!f.type.startsWith('image/'))return;const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const max=1600,scale=Math.min(1,max/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);c.photos=c.photos||[];c.photos.push({name:f.name,data:canvas.toDataURL('image/jpeg',0.78)});save();renderPhotos(c)};img.src=r.result};r.readAsDataURL(f)})}
 function renderPhotos(c){const b=$('photoPreview');if(!b)return;b.innerHTML=(c.photos||[]).map((p,i)=>`<div class="photoThumb"><img src="${p.data}" alt=""><button type="button" data-rm="${i}">×</button></div>`).join('');b.querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{c.photos.splice(+x.dataset.rm,1);save();renderPhotos(c)})}
 function saveCurrent(){
- const n=nests.find(x=>x.id===currentNestId);
- if(!n)return;
- const c=n.controls[currentControl]||blankControl();
- if(currentControl===0&&!n.bird){
-  const input=$('birdInput');
-  const q=(input?.value||'').trim().toLocaleLowerCase('pl-PL');
-  const b=BIRDS.find(x=>x.name.toLocaleLowerCase('pl-PL')===q||x.code.toLocaleLowerCase('pl-PL')===q);
-  if(!b)return alert('Wybierz gatunek z listy.');
-  n.bird=b.name;n.birdCode=b.code;n.number=n.number||nextNumber(b.code);n.label=`${b.code}-${n.number}`;
- }
- const val=id=>$(id)?.value??'';
- c.count=val('count');c.chicks=val('chicks');c.criterion=val('criterion');
- c.observations=[...document.querySelectorAll('[data-obs]:checked')].map(x=>OBS[+x.dataset.obs]);
- const treeInput=$('treeInput');c.tree=(treeInput?.value||'').trim();
- const t=TREES.find(x=>x.name.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL')||x.code.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL'));
- c.treeCode=t?t.code:(treeInput?.dataset.code||'');
- const x=now();c.date=x.date;c.time=x.time;c.notes=val('notes');c.saved=true;
- n.controls[currentControl]=c;n.draft=false;n.seasons=n.seasons||{};
- const year=x.date.slice(0,4);n.seasons[year]=n.seasons[year]||[];n.seasons[year][currentControl]=JSON.parse(JSON.stringify(c));
- try{save()}catch(e){return alert('Nie udało się zapisać danych w pamięci telefonu. Sprawdź wolne miejsce i spróbuj ponownie.')}
- $('nestCode').textContent=n.label;editing=false;renderMarkers();
- alert(`Zapisano kontrolę ${currentControl+1} dla ${n.label}`);
- closeNest();
+  try{
+    const n=nests.find(x=>x.id===currentNestId);
+    if(!n){alert('Nie wybrano gniazda.');return;}
+    n.controls=n.controls||[blankControl(),blankControl(),blankControl(),blankControl()];
+    while(n.controls.length<4)n.controls.push(blankControl());
+    const c=n.controls[currentControl]||blankControl();
+
+    // Gatunek wybieramy tylko przy pierwszym zapisie kontroli 1.
+    if(currentControl===0&&!n.bird){
+      const input=$('birdInput');
+      const q=input?.value?.trim()?.toLocaleLowerCase('pl-PL')||'';
+      const b=BIRDS.find(x=>x.name.toLocaleLowerCase('pl-PL')===q||x.code.toLocaleLowerCase('pl-PL')===q);
+      if(!b){alert('Wybierz gatunek z listy.');return;}
+      n.bird=b.name;n.birdCode=b.code;n.number=n.number||nextNumber(b.code);n.label=`${b.code}-${n.number}`;
+    }
+
+    const val=id=>$(id)?.value??'';
+    c.count=val('count');
+    c.chicks=val('chicks');
+    c.criterion=val('criterion');
+    c.observations=[...document.querySelectorAll('[data-obs]:checked')].map(x=>OBS[+x.dataset.obs]).filter(Boolean);
+    c.tree=val('tree').trim() || val('treeInput').trim();
+    const treeInput=$('treeInput');
+    const t=TREES.find(x=>x.name.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL')||x.code.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL'));
+    c.treeCode=t?t.code:(treeInput?.dataset.code||c.treeCode||'');
+    const x=now();
+    c.date=c.date||x.date;
+    c.time=c.time||x.time;
+    c.notes=val('notes');
+    c.photos=c.photos||[];
+    c.saved=true;
+    n.controls[currentControl]=c;
+    n.draft=false;
+    n.seasons=n.seasons||{};
+    const year=String(c.date).slice(0,4);
+    n.seasons[year]=n.seasons[year]||[];
+    n.seasons[year][currentControl]=JSON.parse(JSON.stringify(c));
+    save();
+    $('nestCode').textContent=n.label||'nie nadano';
+    alert(`Zapisano kontrolę ${currentControl+1} dla ${n.label}`);
+    editing=false;
+    renderTabs();
+    renderControl();
+  }catch(err){
+    console.error('NestMap saveCurrent error:',err);
+    alert('Nie udało się zapisać kontroli. Dane nie zostały usunięte. Spróbuj ponownie.');
+  }
 }
 
 function openNest(id){const n=nests.find(x=>x.id===id);if(!n)return;currentNestId=id;currentControl=0;editing=!!n.draft;$('nestCard').hidden=false;$('nestCode').textContent=n.label||'nie nadano';$('birdFixed').innerHTML=n.bird?`<strong>Gatunek: ${esc(n.bird)} (${esc(n.birdCode)})</strong>`:'Gatunek: jeszcze nie wybrano';$('nestVisibilityBtn').textContent='🙈 Ukryj gniazdo';$('nestVisibilityBtn').onclick=()=>{n.hidden=true;save();renderMarkers();closeNest()};$('editNestBtn').onclick=()=>{editing=true;renderControl()};$('deleteNestBtn').onclick=()=>{if(confirm('Usunąć to gniazdo wraz ze wszystkimi kontrolami i zdjęciami?')){nests=nests.filter(x=>x.id!==id);save();closeNest()}};$('historyBtn').onclick=()=>renderHistory(n);renderTabs();renderControl();window.scrollTo({top:$('nestCard').offsetTop-60,behavior:'smooth'})}
@@ -95,5 +119,5 @@ function buildShapefile(list){const n=list.length;if(!n)return null;const bb=lis
 function exportSHP(){const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));const files=buildShapefile(list);if(!files)return alert('Brak gniazd spełniających wybrane filtry.');downloadBlob(zipStore(files),'NestMap_SHP.zip','application/zip')}
 function downloadBlob(data,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
 function applyAreaExport(){window.__nmExportBounds=map.getBounds();alert('Ustawiono eksport dla obecnie widocznego fragmentu mapy. CSV, KMZ i SHP będą ograniczone do tego obszaru.')}
-$('menuBtn').onclick=()=>{$('menuPanel').hidden=false};$('closeMenu').onclick=()=>{$('menuPanel').hidden=true};$('mapTypeBtn').onclick=()=>{const b=$('mapTypeBtn');if(map.hasLayer(window.__nmImagery)){map.removeLayer(window.__nmImagery);window.__nmStreets.addTo(map);b.textContent='🗺️ Mapa ulic'}else{map.removeLayer(window.__nmStreets);window.__nmImagery.addTo(map);b.textContent='🛰️ Ortofotomapa'}};$('locateBtn').onclick=locatePhone;$('offlineBtn').onclick=prepareOfflineMap;$('registerBtn').onclick=registerNest;$('closeNest').onclick=closeNest;$('saveControl').onclick=saveCurrent;$('cancelNest').onclick=cancelCurrentNest;$('exportCsv').onclick=exportCSV;$('exportKmz').onclick=exportKMZ;$('exportShp').onclick=exportSHP;$('exportCurrentArea').onclick=applyAreaExport;$('deleteVisibleBtn').onclick=deleteVisibleNests;$('countSpeciesBtn').onclick=countSpecies;$('toggleNestsBtn').onclick=()=>{markersVisible=false;renderMarkers()};$('revealNestsBtn').onclick=()=>{markersVisible=true;nests.forEach(n=>n.hidden=false);save();renderMarkers();if(currentNestId){const b=$('nestVisibilityBtn');if(b)b.textContent='🙈 Ukryj gniazdo'}};$('nestSearch').oninput=e=>{speciesQuery=e.target.value;renderSpeciesFilter();renderMarkers()};$('showAllNests').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};$('clearNestFilter').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};if($('yearFilter'))$('yearFilter').onchange=e=>{filterYear=e.target.value;renderMarkers()};
+$('menuBtn').onclick=()=>{$('menuPanel').hidden=false};$('closeMenu').onclick=()=>{$('menuPanel').hidden=true};$('mapTypeBtn').onclick=()=>{const b=$('mapTypeBtn');if(map.hasLayer(window.__nmImagery)){map.removeLayer(window.__nmImagery);window.__nmStreets.addTo(map);b.textContent='🗺️ Mapa ulic'}else{map.removeLayer(window.__nmStreets);window.__nmImagery.addTo(map);b.textContent='🛰️ Ortofotomapa'}};$('locateBtn').onclick=locatePhone;$('offlineBtn').onclick=prepareOfflineMap;$('registerBtn').onclick=registerNest;$('closeNest').onclick=closeNest;$('saveControl').onclick=(e)=>{e.preventDefault();saveCurrent();};$('cancelNest').onclick=cancelCurrentNest;$('exportCsv').onclick=exportCSV;$('exportKmz').onclick=exportKMZ;$('exportShp').onclick=exportSHP;$('exportCurrentArea').onclick=applyAreaExport;$('deleteVisibleBtn').onclick=deleteVisibleNests;$('countSpeciesBtn').onclick=countSpecies;$('toggleNestsBtn').onclick=()=>{markersVisible=false;renderMarkers()};$('revealNestsBtn').onclick=()=>{markersVisible=true;nests.forEach(n=>n.hidden=false);save();renderMarkers();if(currentNestId){const b=$('nestVisibilityBtn');if(b)b.textContent='🙈 Ukryj gniazdo'}};$('nestSearch').oninput=e=>{speciesQuery=e.target.value;renderSpeciesFilter();renderMarkers()};$('showAllNests').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};$('clearNestFilter').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};if($('yearFilter'))$('yearFilter').onchange=e=>{filterYear=e.target.value;renderMarkers()};
 initMap();startContinuousLocation();renderYearFilter();renderSpeciesFilter();
