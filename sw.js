@@ -1,4 +1,4 @@
-const STATIC="nestmap-static-v7", MAP="nestmap-map-tiles-v2";
+const STATIC="nestmap-static-v8-21-3", MAP="nestmap-map-tiles-v2";
 self.addEventListener("install",e=>e.waitUntil(caches.open(STATIC).then(c=>c.addAll(["./","./index.html","./app.js","./data.js","./style.css","./nestmap_v82_ui.css","./nestmap_v86.css","./manifest.webmanifest"]).catch(()=>{}))));
 self.addEventListener("activate",e=>e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch",e=>{const u=e.request.url;if(u.includes("server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/")||u.includes("tile.openstreetmap.org/")){e.respondWith(caches.open(MAP).then(c=>c.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{if(r.ok)c.put(e.request,r.clone());return r}).catch(()=>new Response("",{status:503})))));return}if(e.request.method!=="GET")return;e.respondWith(caches.match(e.request).then(hit=>hit||fetch(e.request).then(r=>{if(r.ok){const copy=r.clone();caches.open(STATIC).then(c=>c.put(e.request,copy))}return r}).catch(()=>caches.match("./index.html"))));});
