@@ -48,7 +48,7 @@ function renderControl(){
  html+=`<label class="emphField"><strong>Obserwacje</strong> <button type="button" id="obsPickerBtn" class="secondary">Wybierz obserwacje</button><div id="obsPicker" class="obsPicker" hidden>${OBS.map((o,i)=>`<label><input type="checkbox" data-obs="${i}" ${(c.observations||[]).includes(o)?'checked':''}> ${esc(o)}</label>`).join('')}</div></label>`;
  html+=`<label class="emphField"><strong>Gatunek drzewa</strong><div class="autocomplete"><input id="treeInput" value="${esc(c.tree)}" placeholder="nazwa lub kod"><div id="treeSug" class="suggestions" hidden></div></div></label>`;
  html+=`<div class="inlinePair emphFields"><label><strong>Data</strong><input id="date" type="date" value="${esc(displayDate)}" readonly></label><label><strong>Czas</strong><input id="time" type="time" value="${esc(displayTime)}" readonly></label></div>`;
- html+=`<label class="emphField"><strong>Uwagi</strong><textarea id="notes" rows="3">${esc(c.notes)}</textarea></label>`;
+ html+=`<label class="notesField"><strong>Uwagi</strong><textarea id="notes" rows="3">${esc(c.notes)}</textarea></label>`;
  if(c.saved&&!editing)html+=`<div class="formActions controlEditActions"><button type="button" id="editCurrentControl" class="secondary">✏️ Edytuj kontrolę ${currentControl+1}</button></div>`;
  $('controlPanel').innerHTML=html;
  bindInputs(n,c);

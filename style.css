@@ -25,7 +25,7 @@
 /* v8.6.2 */
 .selectedObs{font-weight:700;color:#1f2a24;font-size:14px}.strongLabel{font-weight:700;color:#1f2a24}.formActions{align-items:center}.formActions button{white-space:nowrap}
 
-.menuQuickRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.menuQuickRow .menuItem{margin:0}.emphFields select,.emphField select,.emphField textarea,.emphField .selectedObs{font-weight:700;color:#1f2a24;opacity:1}.emphField .criterionDesc{font-weight:400}.historyControl h4{margin:0 0 7px;font-size:16px;font-weight:700}.historyControl b{font-weight:700}.historyDesc{margin-top:4px}@media(max-width:600px){.menuQuickRow{grid-template-columns:1fr 1fr}.menuQuickRow .menuItem{font-size:13px;padding:10px 7px}}
+.menuQuickRow{display:grid;grid-template-columns:1fr 1fr;gap:8px}.menuQuickRow .menuItem{margin:0}.emphFields select,.emphField select,.emphField .selectedObs{font-weight:700;color:#1f2a24;opacity:1}.emphField .criterionDesc{font-weight:400}.historyControl h4{margin:0 0 7px;font-size:16px;font-weight:700}.historyControl b{font-weight:700}.historyDesc{margin-top:4px}@media(max-width:600px){.menuQuickRow{grid-template-columns:1fr 1fr}.menuQuickRow .menuItem{font-size:13px;padding:10px 7px}}
 /* NestMap v8.8 */
 .nestActions{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}
 .nestActions button{flex:0 0 auto}
@@ -39,3 +39,5 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 
 
 
+
+.notesField textarea{font-weight:400 !important;color:#1f2a24 !important;}
