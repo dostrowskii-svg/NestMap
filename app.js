@@ -2,8 +2,9 @@ const $=id=>document.getElementById(id);
 const STORAGE='nestmap-nests-v5';
 const OBS=['para','zaniepokojone dorosłe','dorosły noszący materiał gniazdowy','ptak latający w pobliżu gniazda','krążący ptak','ptak zlatujący z gniazda','dorosłe ze skorupkami jaj','dorosły z pokarmem','inkubacja','pisklęta w gnieździe','świeże gałązki','puch na gnieździe','pióra na gnieździe','pióra pod drzewem','odchody','skorupki jaj','wypluwki','ofiary w okolicy gniazda','brak śladów użytkowania','noclegowisko'];
 let nests=JSON.parse(localStorage.getItem(STORAGE)||'[]');
+let savingControl=false;
 let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null;
-const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',photos:[]});
+const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',photos:[],saved:false,savedAt:''});
 const now=()=>{const d=new Date();return {date:d.toLocaleDateString('en-CA'),time:d.toTimeString().slice(0,5)}};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 function save(){localStorage.setItem(STORAGE,JSON.stringify(nests))}
@@ -47,16 +48,73 @@ function bindInputs(n,c){const crit=$('criterion'),desc=$('criterionDesc');crit.
  const tree=$('treeInput'),tb=$('treeSug');tree.oninput=()=>{const q=tree.value.toLocaleLowerCase('pl-PL').trim(),m=TREES.filter(x=>x.name.toLocaleLowerCase('pl-PL').includes(q)||x.code.toLocaleLowerCase('pl-PL').includes(q)).slice(0,25);tb.innerHTML=m.map((x,i)=>`<div class="suggestion" data-i="${i}">${esc(x.name)} <span>${esc(x.code)}</span></div>`).join('');tb.hidden=!m.length;tb.querySelectorAll('.suggestion').forEach(el=>el.onclick=()=>{const x=m[+el.dataset.i];tree.value=x.name;tree.dataset.code=x.code;tb.hidden=true;$('treeHint').textContent=`Kod drzewa: ${x.code}`;hideMobileKeyboard(tree)})};
  $('cameraInput').onchange=e=>{readPhotos(e.target.files,c);e.target.value=''};$('galleryInput').onchange=e=>{readPhotos(e.target.files,c);e.target.value=''};}
 function setEditable(v){const n=nests.find(x=>x.id===currentNestId);const c=n?.controls?.[currentControl];if(c?.saved&&!v){editing=false}else{editing=!!v}const canEdit=editing;['birdInput','criterion','obsPickerBtn','treeInput','count','chicks','cameraInput','galleryInput','notes'].forEach(id=>{const e=$(id);if(e)e.disabled=!canEdit});const d=$('date'),t=$('time');if(d)d.readOnly=true;if(t)t.readOnly=true;$('saveControl').hidden=!canEdit;$('editNestBtn').hidden=canEdit}
-function readPhotos(files,c){[...files].forEach(f=>{if(!f.type.startsWith('image/'))return;const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const max=1600,scale=Math.min(1,max/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);c.photos=c.photos||[];c.photos.push({name:f.name,data:canvas.toDataURL('image/jpeg',0.78)});save();renderPhotos(c)};img.src=r.result};r.readAsDataURL(f)})}
-function renderPhotos(c){const b=$('photoPreview');if(!b)return;b.innerHTML=(c.photos||[]).map((p,i)=>`<div class="photoThumb"><img src="${p.data}" alt=""><button type="button" data-rm="${i}">×</button></div>`).join('');b.querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{c.photos.splice(+x.dataset.rm,1);save();renderPhotos(c)})}
-function saveCurrent(){const n=nests.find(x=>x.id===currentNestId);if(!n)return;const c=n.controls[currentControl]||blankControl();if(currentControl===0&&!n.bird){const q=$('birdInput')?.value.trim().toLocaleLowerCase('pl-PL'),b=BIRDS.find(x=>x.name.toLocaleLowerCase('pl-PL')===q||x.code.toLocaleLowerCase('pl-PL')===q);if(!b)return alert('Wybierz gatunek z listy.');n.bird=b.name;n.birdCode=b.code;n.number=n.number||nextNumber(b.code);n.label=`${b.code}-${n.number}`}
-c.count=$('count').value;c.chicks=$('chicks').value;c.criterion=$('criterion').value;c.observations=[...document.querySelectorAll('[data-obs]:checked')].map(x=>OBS[+x.dataset.obs]);c.tree=$('treeInput').value.trim();const t=TREES.find(x=>x.name.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL')||x.code.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL'));c.treeCode=t?t.code:($('treeInput').dataset.code||'');const x=now();c.date=x.date;c.time=x.time;c.notes=$('notes').value;c.saved=true;n.controls[currentControl]=c;n.draft=false;n.seasons=n.seasons||{};const year=x.date.slice(0,4);n.seasons[year]=n.seasons[year]||[];n.seasons[year][currentControl]=JSON.parse(JSON.stringify(c));save();$('nestCode').textContent=n.label;editing=false;alert(`Zapisano kontrolę ${currentControl+1} dla ${n.label}`);closeNest()}
+function readPhotos(files,c){
+ c.photos=c.photos||[];
+ [...files].forEach(f=>{
+  if(!f.type.startsWith('image/'))return;
+  const previewUrl=URL.createObjectURL(f);
+  c.photos.push({name:f.name,data:previewUrl,temp:true});
+  renderPhotos(c);
+  const r=new FileReader();
+  r.onload=()=>{
+   const img=new Image();
+   img.onload=()=>{
+    const max=1600,scale=Math.min(1,max/Math.max(img.width,img.height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+    canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+    const i=c.photos.findIndex(x=>x.temp&&x.name===f.name&&x.data===previewUrl);
+    const photo={name:f.name,data:canvas.toDataURL('image/jpeg',0.78)};
+    if(i>=0){URL.revokeObjectURL(previewUrl);c.photos[i]=photo;} else c.photos.push(photo);
+    renderPhotos(c);
+   };
+   img.onerror=()=>{
+    const i=c.photos.findIndex(x=>x.temp&&x.name===f.name&&x.data===previewUrl);
+    if(i>=0){c.photos[i]={name:f.name,data:r.result};renderPhotos(c);}
+   };
+   img.src=r.result;
+  };
+  r.readAsDataURL(f);
+ });
+}
+function renderPhotos(c){const b=$('photoPreview');if(!b)return;b.innerHTML=(c.photos||[]).map((p,i)=>`<div class="photoThumb"><img src="${p.data}" alt=""><button type="button" data-rm="${i}">×</button></div>`).join('');b.querySelectorAll('[data-rm]').forEach(x=>x.onclick=()=>{const i=+x.dataset.rm;const p=c.photos[i];if(p?.temp&&p.data)URL.revokeObjectURL(p.data);c.photos.splice(i,1);renderPhotos(c)})}
+function saveCurrent(){
+ const n=nests.find(x=>x.id===currentNestId);if(!n||savingControl)return;
+ savingControl=true;
+ const btn=$('saveControl');if(btn)btn.disabled=true;
+ try{
+  const c=n.controls[currentControl]||blankControl();
+  if(currentControl===0&&!n.bird){
+   const q=$('birdInput')?.value.trim().toLocaleLowerCase('pl-PL');
+   const b=BIRDS.find(x=>x.name.toLocaleLowerCase('pl-PL')===q||x.code.toLocaleLowerCase('pl-PL')===q);
+   if(!b){alert('Wybierz gatunek z listy.');return;}
+   n.bird=b.name;n.birdCode=b.code;n.number=n.number||nextNumber(b.code);n.label=`${b.code}-${n.number}`;
+  }
+  c.count=$('count')?.value||'';c.chicks=$('chicks')?.value||'';c.criterion=$('criterion')?.value||'';
+  c.observations=[...document.querySelectorAll('[data-obs]:checked')].map(x=>OBS[+x.dataset.obs]);
+  c.tree=$('treeInput')?.value.trim()||'';
+  const t=TREES.find(x=>x.name.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL')||x.code.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL'));
+  c.treeCode=t?t.code:($('treeInput')?.dataset.code||'');
+  c.notes=$('notes')?.value||'';
+  // Each control gets its own timestamp exactly once, at first save. Editing never changes it.
+  if(!c.saved){const x=now();c.date=x.date;c.time=x.time;c.savedAt=`${x.date}T${x.time}`;c.saved=true;}
+  n.controls[currentControl]=c;n.draft=false;n.seasons=n.seasons||{};
+  const year=String(c.date||'').slice(0,4);
+  if(/^\d{4}$/.test(year)){n.seasons[year]=n.seasons[year]||[];n.seasons[year][currentControl]=JSON.parse(JSON.stringify(c));}
+  save();
+  currentNestId=null;editing=false;
+  $('nestCard').hidden=true;$('historyPanel').hidden=true;$('mapMode').hidden=false;
+  renderMarkers();map.invalidateSize(true);map.setView([n.lat,n.lon],Math.max(map.getZoom(),15),{animate:true});
+  window.scrollTo({top:0,behavior:'smooth'});
+ }catch(err){console.error('NestMap saveCurrent error:',err);alert('Nie udało się zapisać kontroli. Spróbuj ponownie.');}
+ finally{savingControl=false;const b=$('saveControl');if(b)b.disabled=false;}
+}
 function openNest(id){const n=nests.find(x=>x.id===id);if(!n)return;currentNestId=id;currentControl=0;editing=!!n.draft;$('nestCard').hidden=false;$('nestCode').textContent=n.label||'nie nadano';$('birdFixed').innerHTML=n.bird?`<strong>Gatunek: ${esc(n.bird)} (${esc(n.birdCode)})</strong>`:'Gatunek: jeszcze nie wybrano';$('nestVisibilityBtn').textContent='🙈 Ukryj gniazdo';$('nestVisibilityBtn').onclick=()=>{n.hidden=true;save();renderMarkers();closeNest()};$('editNestBtn').onclick=()=>{editing=true;renderControl()};$('deleteNestBtn').onclick=()=>{if(confirm('Usunąć to gniazdo wraz ze wszystkimi kontrolami i zdjęciami?')){nests=nests.filter(x=>x.id!==id);save();closeNest()}};$('historyBtn').onclick=()=>renderHistory(n);renderTabs();renderControl();window.scrollTo({top:$('nestCard').offsetTop-60,behavior:'smooth'})}
 function renderHistory(n){const p=$('historyPanel');p.hidden=!p.hidden;if(p.hidden)return;const seasons=n.seasons||{};const years=Object.keys(seasons).sort((a,b)=>b.localeCompare(a));const val=v=>esc(v==null||v===''?'—':v);const obs=v=>(v||[]).length?esc(v.join(', ')):'—';const controls=arr=>[0,1,2,3].map(i=>{const c=arr[i]||blankControl();const crit=CRITERIA.find(x=>x.code===c.criterion);return `<div class="historyControl"><h4>Kontrola ${i+1}</h4><div><b>Data:</b> ${val(c.date)} &nbsp; <b>Czas:</b> ${val(c.time)}</div><div><b>Liczebność:</b> ${val(c.count)}</div><div><b>Liczba piskląt:</b> ${val(c.chicks)}</div><div><b>Kryterium lęgowości:</b> ${val(c.criterion)}</div><div class="historyDesc"><b>Opis kryterium:</b> ${val(crit&&crit.desc)}</div><div><b>Obserwacje:</b> ${obs(c.observations)}</div><div><b>Drzewo:</b> ${val(c.tree)}</div><div><b>Kod drzewa:</b> ${val(c.treeCode)}</div><div><b>Uwagi:</b> ${val(c.notes)}</div><div><b>Zdjęcia:</b> ${(c.photos||[]).length}</div></div>`}).join('');p.innerHTML=years.length?`<h3>Historia gniazda ${esc(n.label)}</h3>`+years.map(y=>`<div class="historyYear"><button type="button" data-year="${y}">${y} ▸</button><div class="historyBody" data-body="${y}" hidden>${controls(seasons[y]||[])}</div></div>`).join(''):'<div class="muted">Brak zapisanej historii.</div>';p.querySelectorAll('[data-year]').forEach(b=>b.onclick=()=>{const body=p.querySelector(`[data-body="${b.dataset.year}"]`);body.hidden=!body.hidden;b.textContent=body.hidden?`${b.dataset.year} ▸`:`${b.dataset.year} ▾`})}
 function renderTabs(){document.querySelectorAll('.tab').forEach((b,i)=>{b.classList.toggle('active',i===currentControl);b.onclick=()=>{currentControl=i;const n=nests.find(x=>x.id===currentNestId);const c=n?.controls?.[i]||blankControl();editing=!!n?.draft || !c.saved;renderTabs();renderControl()}})}
 function cancelCurrentNest(){const n=nests.find(x=>x.id===currentNestId);if(!n)return;if(n.draft&&!n.bird){nests=nests.filter(x=>x.id!==currentNestId);save();$('mapMode').hidden=false;closeNest();return}editing=false;renderControl()}
 function closeNest(){currentNestId=null;$('nestCard').hidden=true;$('historyPanel').hidden=true;renderMarkers();map.invalidateSize();window.scrollTo({top:0,behavior:'smooth'})}
-function registerNest(){const c=map.getCenter(),id=crypto.randomUUID?crypto.randomUUID():String(Date.now());const n={id,lat:Number(c.lat.toFixed(6)),lon:Number(c.lng.toFixed(6)),bird:'',birdCode:'',label:'',number:'',controls:[blankControl(),blankControl(),blankControl(),blankControl()],seasons:{},draft:true};nests.push(n);save();currentNestId=id;$('mapMode').hidden=true;openNest(id)}
+function registerNest(){if(currentNestId)return;const c=map.getCenter(),id=crypto.randomUUID?crypto.randomUUID():String(Date.now());const n={id,lat:Number(c.lat.toFixed(6)),lon:Number(c.lng.toFixed(6)),bird:'',birdCode:'',label:'',number:'',controls:[blankControl(),blankControl(),blankControl(),blankControl()],seasons:{},draft:true};nests.push(n);currentNestId=id;$('mapMode').hidden=true;openNest(id)}
 function deleteVisibleNests(){const b=map.getBounds();const candidates=nests.filter(n=>n.lat&&n.lon&&b.contains([n.lat,n.lon])&&!n.hidden);if(!candidates.length)return alert('W widocznym fragmencie mapy nie ma widocznych gniazd.');if(!confirm(`Usunąć ${candidates.length} gniazd z widocznego fragmentu mapy? Tej operacji nie można cofnąć.`))return;nests=nests.filter(n=>!(n.lat&&n.lon&&b.contains([n.lat,n.lon])&&!n.hidden));save();renderMarkers();alert(`Usunięto ${candidates.length} gniazd.`)}
 function countSpecies(){const box=$('speciesCountBox');if(!box)return;if(!box.hidden){box.hidden=true;return}const m={};nests.forEach(n=>{const k=n.bird||'bez gatunku';m[k]=(m[k]||0)+1});box.hidden=false;box.innerHTML=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="speciesCountRow"><span>${esc(k)}</span><strong>${v}</strong></div>`).join('')}
 function getFilteredNests(){return nests.filter(n=>nestMatches(n))}
