@@ -9,6 +9,7 @@ const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function save(){localStorage.setItem(STORAGE,JSON.stringify(nests))}
 function nextNumber(code){let max=0;nests.filter(n=>n.birdCode===code).forEach(n=>max=Math.max(max,parseInt(n.number)||0));return String(max+1).padStart(2,'0')}
 const TILE_DB='nestmap-tiles-v4';
+// Widoczne kafelki mapy są automatycznie zapamiętywane przez Service Worker (MAP cache).
 function openTileDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open(TILE_DB,1);r.onupgradeneeded=()=>r.result.createObjectStore('tiles');r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
 async function putCachedTile(key,blob){try{const db=await openTileDB();await new Promise((res,rej)=>{const q=db.transaction('tiles','readwrite').objectStore('tiles').put(blob,key);q.onsuccess=res;q.onerror=()=>rej(q.error)})}catch{}}
 async function cacheTileUrl(url){try{const r=await fetch(url,{mode:'cors',cache:'reload'});if(!r.ok)return false;const cache=await caches.open('nestmap-map-tiles-v2');await cache.put(url,r.clone());return true}catch{return false}}
