@@ -1,4 +1,4 @@
-const VERSION="v8-21-5";
+const VERSION="v8-21-7";
 const STATIC=`nestmap-static-${VERSION}`;
 const MAP="nestmap-map-tiles-v4";
 const APP_SHELL=["./","./index.html","./app.js","./data.js","./style.css","./nestmap_v82_ui.css","./nestmap_v86.css","./manifest.webmanifest","./kania-logo.png"];
@@ -28,6 +28,12 @@ self.addEventListener("fetch",event=>{
 
   // Never let an old Service Worker cache its own update file.
   if(new URL(url).pathname.endsWith("/sw.js")){
+    event.respondWith(fetch(req,{cache:"no-store"}));
+    return;
+  }
+
+  // BDL drzewostany are online-only: never cache BDL responses in the service worker.
+  if(url.includes("bdl.lasy.gov.pl")){
     event.respondWith(fetch(req,{cache:"no-store"}));
     return;
   }

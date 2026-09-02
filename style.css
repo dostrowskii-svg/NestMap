@@ -41,3 +41,12 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 
 
 #notes{font-weight:400 !important;}
+
+/* v8.21.7: compact map controls */
+.mapFixedControls .mapCtl{font-size:12px;padding:7px 9px;border-radius:9px;line-height:1.15;white-space:nowrap;box-shadow:0 1px 4px #0002}
+.mapFixedControls .mapCtl.active{background:#e1f1e5;color:#1f6f43;font-weight:700}
+.bdlPopup{font-family:Arial,sans-serif;color:#1f2a24;font-size:13px;max-height:58vh;overflow:auto}
+.bdlPopup h3{margin:0 0 8px;font-size:17px;font-weight:700}
+.bdlSectionTitle{background:#707070;color:#fff;text-align:center;padding:6px;margin:8px 0;font-size:12px;font-weight:700;letter-spacing:.2px}
+.bdlRow{display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-bottom:1px solid #edf0ee}.bdlRow span{color:#68756e}.bdlRow b{font-weight:400;text-align:right}.bdlSpeciesRow{display:flex;flex-wrap:wrap;gap:7px;padding:7px 0;border-bottom:1px solid #e2e7e4}.bdlSpeciesRow b{min-width:30px}.bdlSource{margin-top:8px;color:#7a857f;font-size:11px}
+@media(max-width:600px){.mapFixedControls{right:6px;top:6px;gap:4px}.mapFixedControls .mapCtl{font-size:11px;padding:6px 7px}.bdlPopup{font-size:12px}.bdlPopup h3{font-size:16px}}
