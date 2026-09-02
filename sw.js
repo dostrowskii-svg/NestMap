@@ -1,6 +1,6 @@
-const VERSION="v8-21-7";
+const VERSION="v8-21-10";
 const STATIC=`nestmap-static-${VERSION}`;
-const MAP="nestmap-map-tiles-v4";
+const MAP="nestmap-map-tiles-v5";
 const APP_SHELL=["./","./index.html","./app.js","./data.js","./style.css","./nestmap_v82_ui.css","./nestmap_v86.css","./manifest.webmanifest","./kania-logo.png"];
 
 self.addEventListener("install",event=>{
