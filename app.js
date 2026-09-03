@@ -3,7 +3,7 @@ const STORAGE='nestmap-nests-v5';
 const OBS=['para','zaniepokojone dorosłe','dorosły noszący materiał gniazdowy','ptak latający w pobliżu gniazda','krążący ptak','ptak zlatujący z gniazda','dorosłe ze skorupkami jaj','dorosły z pokarmem','inkubacja','pisklęta w gnieździe','świeże gałązki','napuszone gniazdo','puch na gnieździe','pióra na gnieździe','pióra pod drzewem','odchody','skorupki jaj','wypluwki','ofiary w okolicy gniazda','brak śladów użytkowania','nocujące ptaki na lub przy gnieździe'];
 let nests=JSON.parse(localStorage.getItem(STORAGE)||'[]').filter(n=>!n?.draft);
 save();
-let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlForestWms=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
+let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlForestWms=null,bdlWmtsLayer=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
 const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',});
 const now=()=>{const d=new Date();return {date:d.toLocaleDateString('en-CA'),time:d.toTimeString().slice(0,5)}};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -19,14 +19,18 @@ function initMap(){
  const imagery=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:19,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'Tiles © Esri'}).addTo(map); window.__nmImagery=imagery;
  const streets=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,attribution:'© OpenStreetMap'}); window.__nmStreets=streets;
  const bdlWms='https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer';
- // Render the forest colours on the BDL server itself. This is the same renderer
- // used by the official BDL service, instead of approximating colours in Leaflet.
- bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11,9,7',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(405);
- // Boundaries stay independent from the label switch.
- bdlCompartmentBoundaryLayer=L.tileLayer.wms(bdlWms,{layers:'3',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(420);
- bdlSubareaBoundaryLayer=L.tileLayer.wms(bdlWms,{layers:'5',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(430);
+ // IMPORTANT: use BDL's official WMTS mobile forest-stand map. It is the same
+ // pre-rendered thematic map used for the mBDL-style display, including the
+ // coloured stand polygons, compartment labels and subarea labels at their
+ // intended scales. The previous WMS overlay rendered only outlines in Safari.
+ const bdlWmts='https://mapserver.bdl.lasy.gov.pl/arcgis/rest/services/WMTS_BDL_mapa_drzewostanow/MapServer/tile/{z}/{y}/{x}';
+ bdlWmtsLayer=L.tileLayer(bdlWmts,{minZoom:6,maxZoom:19,minNativeZoom:6,maxNativeZoom:17,tileSize:256,opacity:1,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'BDL · Lasy Państwowe'}).setZIndex(405);
+ // Keep legacy WMS objects only for compatibility; they are NOT added to the map.
+ bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11,9,7',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:0,tileSize:256}).setZIndex(404);
+ bdlCompartmentBoundaryLayer=null;
+ bdlSubareaBoundaryLayer=null;
  // Keep a group variable for compatibility with the rest of the app.
- bdlLayer=L.layerGroup([bdlForestWms]).setZIndex(200);
+ bdlLayer=L.layerGroup([bdlWmtsLayer]).setZIndex(200);
  bdlBoundaryLayer=bdlCompartmentBoundaryLayer;
  const cross=document.createElement('div');cross.className='crosshair';cross.textContent='＋';$('map').appendChild(cross);
  map.on('load moveend zoomend',()=>{setTimeout(()=>map.invalidateSize(false),50);if(bdlEnabled){setBDLBoundaryLayer();refreshBDLVectorOverlay();}});
@@ -57,6 +61,7 @@ function toggleBDL(){
    $('mapStatus').textContent='Drzewostany BDL są dostępne online. Kliknij wydzielenie, aby zobaczyć opis.';
    ensureBDLInfoPanel();refreshBDLVectorOverlay();
  }else{
+   if(bdlWmtsLayer&&map.hasLayer(bdlWmtsLayer))map.removeLayer(bdlWmtsLayer);
    if(bdlForestWms&&map.hasLayer(bdlForestWms))map.removeLayer(bdlForestWms);
    if(bdlLayer&&map.hasLayer(bdlLayer))map.removeLayer(bdlLayer);
    if(bdlCompartmentBoundaryLayer&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);if(bdlSubareaBoundaryLayer&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
@@ -88,17 +93,16 @@ function bdlQueryUrl(layerId, params){
 }
 function setBDLBoundaryLayer(){
  if(!bdlEnabled||!map)return;
- if(bdlForestWms&&!map.hasLayer(bdlForestWms))bdlForestWms.addTo(map);
- // Boundaries and labels are rendered by refreshBDLVectorOverlay so the label toggle can hide only text.
- if(bdlCompartmentBoundaryLayer&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);
- if(bdlSubareaBoundaryLayer&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
+ if(bdlWmtsLayer&&!map.hasLayer(bdlWmtsLayer))bdlWmtsLayer.addTo(map);
+ // The official WMTS supplies the BDL cartography. Vector overlays are used only
+ // for click targets and optional labels; no second outline-only WMS is drawn.
 }
 
 async function refreshBDLVectorOverlay(){
  if(!bdlEnabled||!map||map.getZoom()<6){
    if(bdlVectorLayer){map.removeLayer(bdlVectorLayer);bdlVectorLayer=null}
    if(bdlLabelLayer){map.removeLayer(bdlLabelLayer);bdlLabelLayer=null}
-   setBDLBoundaryLayer(); return;
+   return;
  }
  const seq=++bdlVectorSeq;
  try{
@@ -111,11 +115,11 @@ async function refreshBDLVectorOverlay(){
   if(seq!==bdlVectorSeq)return;
   const subs=z>=13?await q(5,'adress_forest,subarea_id,site_type_cd,species_cd_d,part_cd,species_age,a_year'):[];
   if(seq!==bdlVectorSeq)return;
-  const stands=[]; // colour polygons come directly from the official BDL WMS renderer
+  const stands=[]; // official WMTS provides the coloured polygons
   if(seq!==bdlVectorSeq)return;
   if(bdlVectorLayer)map.removeLayer(bdlVectorLayer); if(bdlLabelLayer)map.removeLayer(bdlLabelLayer);
   const boundary=L.layerGroup(), labels=L.layerGroup();
-  // Colour fill is rendered by the official BDL WMS above.
+  // Colour fill, official labels and scale-dependent cartography come from WMTS.
   comps.forEach(f=>{
    const p=bdlFeatureAttributes(f), gj=L.geoJSON(f,{style:{color:'#666',weight:1,opacity:.85,fill:false},interactive:true});
    gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); boundary.addLayer(gj);
