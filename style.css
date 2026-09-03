@@ -58,3 +58,6 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 .bdlTextLabel:before{display:none!important}.bdlTextLabel div{white-space:nowrap}
 .exportRow{grid-template-columns:repeat(4,1fr)!important}
 @media(max-width:600px){.bdlInfoPanel{width:min(360px,calc(100% - 112px));font-size:12px}.bdlPanelHead h3{font-size:15px}.bdlClose{width:28px;height:28px;font-size:22px}.bdlTextLabel{font-size:10px}.exportRow .menuItem{font-size:11px;padding:10px 3px}}
+
+/* NestMap v8.21.11: compact control tabs; action row stays single-line without horizontal scrolling. */
+.compactTabs{display:grid!important;grid-template-columns:repeat(4,1fr);gap:6px!important}.compactTabs .tab{min-width:0;padding:8px 6px!important;text-align:center}.nestActions{flex-wrap:nowrap;overflow:visible!important}.nestActions button{flex:0 0 auto}.bdlTextLabel{z-index:1500!important;color:#111!important;font-weight:700!important;text-shadow:0 1px 2px #fff,0 -1px 2px #fff,1px 0 2px #fff,-1px 0 2px #fff}
