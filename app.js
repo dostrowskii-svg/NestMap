@@ -3,7 +3,7 @@ const STORAGE='nestmap-nests-v5';
 const OBS=['para','zaniepokojone dorosłe','dorosły noszący materiał gniazdowy','ptak latający w pobliżu gniazda','krążący ptak','ptak zlatujący z gniazda','dorosłe ze skorupkami jaj','dorosły z pokarmem','inkubacja','pisklęta w gnieździe','świeże gałązki','napuszone gniazdo','puch na gnieździe','pióra na gnieździe','pióra pod drzewem','odchody','skorupki jaj','wypluwki','ofiary w okolicy gniazda','brak śladów użytkowania','nocujące ptaki na lub przy gnieździe'];
 let nests=JSON.parse(localStorage.getItem(STORAGE)||'[]').filter(n=>!n?.draft);
 save();
-let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
+let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlForestWms=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
 const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',});
 const now=()=>{const d=new Date();return {date:d.toLocaleDateString('en-CA'),time:d.toTimeString().slice(0,5)}};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -18,10 +18,16 @@ function initMap(){
  map=L.map('map',{zoomControl:false,scrollWheelZoom:true,doubleClickZoom:true,touchZoom:true,boxZoom:true,keyboard:true,minZoom:2,maxZoom:19,worldCopyJump:false,zoomSnap:1,zoomDelta:1,zoomAnimation:true,fadeAnimation:true,markerZoomAnimation:true,preferCanvas:true,attributionControl:true}).setView([52.1,19.4],6);
  const imagery=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:19,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'Tiles © Esri'}).addTo(map); window.__nmImagery=imagery;
  const streets=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,attribution:'© OpenStreetMap'}); window.__nmStreets=streets;
- bdlLayer=L.layerGroup().setZIndex(200);
- bdlBoundaryLayer=L.tileLayer.wms('https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer',{layers:'3',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(420);
- bdlCompartmentBoundaryLayer=bdlBoundaryLayer;
- bdlSubareaBoundaryLayer=L.tileLayer.wms('https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer',{layers:'5',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(430);
+ const bdlWms='https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer';
+ // Render the forest colours on the BDL server itself. This is the same renderer
+ // used by the official BDL service, instead of approximating colours in Leaflet.
+ bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11,9,7',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(405);
+ // Boundaries stay independent from the label switch.
+ bdlCompartmentBoundaryLayer=L.tileLayer.wms(bdlWms,{layers:'3',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(420);
+ bdlSubareaBoundaryLayer=L.tileLayer.wms(bdlWms,{layers:'5',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(430);
+ // Keep a group variable for compatibility with the rest of the app.
+ bdlLayer=L.layerGroup([bdlForestWms]).setZIndex(200);
+ bdlBoundaryLayer=bdlCompartmentBoundaryLayer;
  const cross=document.createElement('div');cross.className='crosshair';cross.textContent='＋';$('map').appendChild(cross);
  map.on('load moveend zoomend',()=>{setTimeout(()=>map.invalidateSize(false),50);if(bdlEnabled){setBDLBoundaryLayer();refreshBDLVectorOverlay();}});
  map.on('click',e=>{if(bdlEnabled)showBDLAtPoint(e.latlng)});
@@ -51,7 +57,8 @@ function toggleBDL(){
    $('mapStatus').textContent='Drzewostany BDL są dostępne online. Kliknij wydzielenie, aby zobaczyć opis.';
    ensureBDLInfoPanel();refreshBDLVectorOverlay();
  }else{
-   map.removeLayer(bdlLayer);
+   if(bdlForestWms&&map.hasLayer(bdlForestWms))map.removeLayer(bdlForestWms);
+   if(bdlLayer&&map.hasLayer(bdlLayer))map.removeLayer(bdlLayer);
    if(bdlCompartmentBoundaryLayer&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);if(bdlSubareaBoundaryLayer&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
    closeBDLInfo();
    if(baseMapMode==='streets')window.__nmStreets.addTo(map);else window.__nmImagery.addTo(map);
@@ -81,18 +88,14 @@ function bdlQueryUrl(layerId, params){
 }
 function setBDLBoundaryLayer(){
  if(!bdlEnabled||!map)return;
- // Official WMS gives the same colours/scale behaviour as BDL. Custom vectors
- // below are used only for crisp boundaries/labels and are never the colour fill.
- if(bdlCompartmentBoundaryLayer){
-   if(!map.hasLayer(bdlCompartmentBoundaryLayer)) bdlCompartmentBoundaryLayer.addTo(map);
- }
- if(bdlSubareaBoundaryLayer){
-   if(map.getZoom()>=13){if(!map.hasLayer(bdlSubareaBoundaryLayer))bdlSubareaBoundaryLayer.addTo(map)}
-   else if(map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
- }
+ if(bdlForestWms&&!map.hasLayer(bdlForestWms))bdlForestWms.addTo(map);
+ // Boundaries and labels are rendered by refreshBDLVectorOverlay so the label toggle can hide only text.
+ if(bdlCompartmentBoundaryLayer&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);
+ if(bdlSubareaBoundaryLayer&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
 }
+
 async function refreshBDLVectorOverlay(){
- if(!bdlEnabled||!map||map.getZoom()<8){
+ if(!bdlEnabled||!map||map.getZoom()<6){
    if(bdlVectorLayer){map.removeLayer(bdlVectorLayer);bdlVectorLayer=null}
    if(bdlLabelLayer){map.removeLayer(bdlLabelLayer);bdlLabelLayer=null}
    setBDLBoundaryLayer(); return;
@@ -108,21 +111,11 @@ async function refreshBDLVectorOverlay(){
   if(seq!==bdlVectorSeq)return;
   const subs=z>=13?await q(5,'adress_forest,subarea_id,site_type_cd,species_cd_d,part_cd,species_age,a_year'):[];
   if(seq!==bdlVectorSeq)return;
-  const stands=z>=11?await q(11,'adress_forest,species_cd,part_cd,species_age,storey_cd,storey_rank_order,grp_age_int,gat_grp,a_year') : [];
+  const stands=[]; // colour polygons come directly from the official BDL WMS renderer
   if(seq!==bdlVectorSeq)return;
-  if(bdlVectorLayer)map.removeLayer(bdlVectorLayer); if(bdlLabelLayer)map.removeLayer(bdlLabelLayer); if(bdlLayer&&map.hasLayer(bdlLayer))map.removeLayer(bdlLayer);
-  const boundary=L.layerGroup(), labels=L.layerGroup(), colors=L.layerGroup();
-  const colorsByAge={
-   '3,SO':'rgb(213,133,63)','3,ŚW':'rgb(173,164,254)','3,JD':'rgb(29,143,254)','3,DB':'rgb(139,139,139)','3,GB':'rgb(254,190,0)','3,BK':'rgb(254,190,0)','3,OL':'rgb(0,253,117)','3,BRZ':'rgb(63,229,230)','3,TP':'rgb(254,134,134)','3,OS':'rgb(254,134,134)',
-   '2,SO':'rgb(217,159,98)','2,ŚW':'rgb(192,186,253)','2,JD':'rgb(102,179,255)','2,DB':'rgb(174,174,174)','2,GB':'rgb(253,210,89)','2,BK':'rgb(253,210,89)','2,OL':'rgb(109,253,140)','2,BRZ':'rgb(133,242,238)','2,TP':'rgb(254,179,179)','2,OS':'rgb(254,179,179)',
-   '1,SO':'rgb(221,183,134)','1,ŚW':'rgb(212,209,253)','1,JD':'rgb(134,205,249)','1,DB':'rgb(209,209,209)','1,GB':'rgb(253,233,179)','1,BK':'rgb(253,233,179)','1,OL':'rgb(220,253,219)','1,BRZ':'rgb(209,253,250)','1,TP':'rgb(253,224,224)','1,OS':'rgb(253,224,224)',
-   'null,SO':'rgb(221,183,134)','null,ŚW':'rgb(212,209,253)','null,JD':'rgb(134,205,249)','null,DB':'rgb(209,209,209)','null,GB':'rgb(252,233,179)','null,BK':'rgb(252,233,179)','null,OL':'rgb(229,253,219)','null,BRZ':'rgb(209,253,250)','null,TP':'rgb(253,224,224)','null,OS':'rgb(253,224,224)'
-  };
-  stands.forEach(f=>{
-   const p=bdlFeatureAttributes(f), key=`${p.grp_age_int==null?'null':p.grp_age_int},${p.gat_grp||''}`, fill=colorsByAge[key]||'rgb(220,220,220)';
-   const gj=L.geoJSON(f,{style:{color:'transparent',weight:0,fillColor:fill,fillOpacity:1},interactive:true});
-   gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); colors.addLayer(gj);
-  });
+  if(bdlVectorLayer)map.removeLayer(bdlVectorLayer); if(bdlLabelLayer)map.removeLayer(bdlLabelLayer);
+  const boundary=L.layerGroup(), labels=L.layerGroup();
+  // Colour fill is rendered by the official BDL WMS above.
   comps.forEach(f=>{
    const p=bdlFeatureAttributes(f), gj=L.geoJSON(f,{style:{color:'#666',weight:1,opacity:.85,fill:false},interactive:true});
    gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); boundary.addLayer(gj);
@@ -133,7 +126,7 @@ async function refreshBDLVectorOverlay(){
    gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); boundary.addLayer(gj);
    if(bdlLabelsVisible){const c=geometryCenter(f.geometry),adr=String(p.adress_forest||'').split('-'),sub=adr.length>=2?`${adr[adr.length-2]}-${adr[adr.length-1]}`:'',sp=p.species_cd_d||'',age=p.species_age??'',text=[sub,[sp,age].filter(v=>v!==''&&v!=null).join('')].filter(Boolean).join(' ');if(c&&text){const m=L.marker(c,{interactive:true,icon:L.divIcon({className:'bdlSubareaLabel',html:esc(text),iconSize:null,iconAnchor:[0,0]})});m.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)});labels.addLayer(m)}}
   });
-  bdlVectorLayer=L.layerGroup([colors,boundary]); bdlLabelLayer=labels;
+  bdlVectorLayer=boundary; bdlLabelLayer=labels;
   bdlVectorLayer.addTo(map); labels.addTo(map);
  }catch(e){console.warn('BDL overlay',e)}
 }
