@@ -71,3 +71,15 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 /* NestMap v8.21.13: BDL labels and vertical species description */
 .bdlSpeciesBlock{padding:4px 0 7px;margin-bottom:5px;border-bottom:1px solid #dfe5e1}.bdlSpeciesBlock:last-child{border-bottom:0}.bdlSpeciesBlock .bdlRow{padding:4px 0}.bdlSpeciesBlock .bdlRow b{font-weight:400}.bdlCompartmentLabel,.bdlSubareaLabel{background:transparent!important;border:0!important;box-shadow:none!important;white-space:nowrap;color:#3f3f3f;font-family:Arial,sans-serif;font-weight:700;line-height:1.05;text-shadow:0 1px 2px #fff,0 -1px 2px #fff,1px 0 2px #fff,-1px 0 2px #fff;pointer-events:auto}.bdlCompartmentLabel{font-size:12px}.bdlSubareaLabel{font-size:10px}.bdlCompartmentLabel:before,.bdlSubareaLabel:before{display:none!important}
 @media(max-width:600px){.bdlCompartmentLabel{font-size:11px}.bdlSubareaLabel{font-size:9px}.bdlSpeciesBlock .bdlRow{padding:3px 0}}
+
+
+/* NestMap v8.21.16: map controls slightly larger; BDL native labels/rendering. */
+.mapFixedControls .mapCtl{font-size:14px!important;padding:10px 13px!important;border-radius:10px!important}
+@media(max-width:600px){.mapFixedControls{right:7px!important;top:7px!important;gap:6px!important}.mapFixedControls .mapCtl{font-size:15px!important;padding:10px 13px!important}}
+.nestActions{display:grid!important;grid-template-columns:1.42fr .92fr .98fr .82fr .68fr!important;gap:5px!important;overflow:visible!important;width:100%!important}
+.nestActions button{min-width:0!important;width:100%!important;white-space:nowrap!important;font-size:11px!important;padding:8px 3px!important}
+.bdlInfoPanel{max-height:calc(100% - 16px)!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch}
+.bdlSpeciesBlock{padding:5px 0 8px!important;margin-bottom:5px!important;border-bottom:1px solid #dfe5e1}
+.bdlSpeciesBlock .bdlRow{display:flex!important;justify-content:space-between!important;gap:12px!important;padding:4px 0!important}
+.bdlSpeciesBlock .bdlRow span{flex:0 0 auto!important}
+.bdlSpeciesBlock .bdlRow b{flex:1 1 auto!important;text-align:right!important;word-break:break-word!important}

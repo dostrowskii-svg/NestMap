@@ -4,10 +4,10 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#1f6f43"><meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="manifest" href="manifest.webmanifest"><title>NestMap</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=8.21.16">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="nestmap_v82_ui.css">
-<link rel="stylesheet" href="nestmap_v86.css">
+<link rel="stylesheet" href="nestmap_v82_ui.css?v=8.21.16">
+<link rel="stylesheet" href="nestmap_v86.css?v=8.21.16">
 </head>
 <body>
 <header><div><h1>🪶 NestMap</h1><p>terenowa ewidencja gniazd ptaków</p></div><img class="nestmapLogo" src="kania-logo.png" alt="Kania i gniazdo"></header>
@@ -54,8 +54,9 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="data.js"></script><script src="app.js"></script>
-<script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js?v=8.21.15").catch(()=>{}));}</script>
+<script src="https://unpkg.com/esri-leaflet@3.0.16/dist/esri-leaflet.js"></script>
+<script src="data.js?v=8.21.16"></script><script src="app.js?v=8.21.16"></script>
+<script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js?v=8.21.16").catch(()=>{}));}</script>
 <script>
 /* NestMap v8.6.1 - collapsible species count */
 (function(){
