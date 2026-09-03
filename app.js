@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const STORAGE='nestmap-nests-v5';
 const OBS=['para','zaniepokojone dorosłe','dorosły noszący materiał gniazdowy','ptak latający w pobliżu gniazda','krążący ptak','ptak zlatujący z gniazda','dorosłe ze skorupkami jaj','dorosły z pokarmem','inkubacja','pisklęta w gnieździe','świeże gałązki','napuszone gniazdo','puch na gnieździe','pióra na gnieździe','pióra pod drzewem','odchody','skorupki jaj','wypluwki','ofiary w okolicy gniazda','brak śladów użytkowania','nocujące ptaki na lub przy gnieździe'];
 let nests=JSON.parse(localStorage.getItem(STORAGE)||'[]');
-let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
+let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
 const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',});
 const now=()=>{const d=new Date();return {date:d.toLocaleDateString('en-CA'),time:d.toTimeString().slice(0,5)}};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -19,6 +19,8 @@ function initMap(){
  const streets=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,attribution:'© OpenStreetMap'}); window.__nmStreets=streets;
  bdlLayer=L.tileLayer.wms('https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer',{layers:'11',format:'image/png',transparent:false,version:'1.3.0',opacity:1,attribution:'BDL Lasy Państwowe',uppercase:true,tileSize:256,keepBuffer:2,updateWhenZooming:false,updateWhenIdle:true});
  bdlBoundaryLayer=L.tileLayer.wms('https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer',{layers:'3',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:2,updateWhenZooming:false,updateWhenIdle:true});
+ bdlCompartmentBoundaryLayer=bdlBoundaryLayer;
+ bdlSubareaBoundaryLayer=L.tileLayer.wms('https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer',{layers:'5',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:2,updateWhenZooming:false,updateWhenIdle:true});
  const cross=document.createElement('div');cross.className='crosshair';cross.textContent='＋';$('map').appendChild(cross);
  map.on('load moveend zoomend',()=>{setTimeout(()=>map.invalidateSize(false),50);if(bdlEnabled){setBDLBoundaryLayer();refreshBDLVectorOverlay();}});
  map.on('click',e=>{if(bdlEnabled)showBDLAtPoint(e.latlng)});
@@ -50,7 +52,7 @@ function toggleBDL(){
    ensureBDLInfoPanel();refreshBDLVectorOverlay();
  }else{
    map.removeLayer(bdlLayer);
-   if(bdlBoundaryLayer&&map.hasLayer(bdlBoundaryLayer))map.removeLayer(bdlBoundaryLayer);
+   if(bdlCompartmentBoundaryLayer&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);if(bdlSubareaBoundaryLayer&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
    closeBDLInfo();
    if(baseMapMode==='streets')window.__nmStreets.addTo(map);else window.__nmImagery.addTo(map);
    if(btn){btn.classList.remove('active');btn.textContent='🌲 Drzewostany BDL'}
@@ -78,35 +80,56 @@ function bdlQueryUrl(layerId, params){
  return `https://mapserver.bdl.lasy.gov.pl/arcgis/rest/services/WMS_BDL_mapa_drzewostanow/MapServer/${layerId}/query?${params}`;
 }
 function setBDLBoundaryLayer(){
- if(!bdlEnabled||!bdlBoundaryLayer||!map)return;
+ if(!bdlEnabled||!map)return;
  const z=map.getZoom();
- const layer=z>=14?'5':'3';
- bdlBoundaryLayer.setParams({layers:layer});
- if(!map.hasLayer(bdlBoundaryLayer))bdlBoundaryLayer.addTo(map);
+ const showComp=z>=10;
+ const showSub=z>=14;
+ if(bdlCompartmentBoundaryLayer){
+   if(showComp&&!map.hasLayer(bdlCompartmentBoundaryLayer))bdlCompartmentBoundaryLayer.addTo(map);
+   if(!showComp&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);
+ }
+ if(bdlSubareaBoundaryLayer){
+   if(showSub&&!map.hasLayer(bdlSubareaBoundaryLayer))bdlSubareaBoundaryLayer.addTo(map);
+   if(!showSub&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
+ }
 }
 async function refreshBDLVectorOverlay(){
- if(!bdlEnabled||!map||map.getZoom()<8){
-   if(bdlBoundaryLayer&&map.hasLayer(bdlBoundaryLayer))map.removeLayer(bdlBoundaryLayer);
+ if(!bdlEnabled||!map||map.getZoom()<10){
+   if(bdlCompartmentBoundaryLayer&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);
+   if(bdlSubareaBoundaryLayer&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
    if(bdlVectorLayer){map.removeLayer(bdlVectorLayer);bdlVectorLayer=null}
    if(bdlLabelLayer){map.removeLayer(bdlLabelLayer);bdlLabelLayer=null}
    return
  }
+ setBDLBoundaryLayer();
  const seq=++bdlVectorSeq;bdlVectorBusy=true;
  try{
   const z=map.getZoom(), b=map.getBounds();
-  const close=z>=14, layerId=close?5:3;
-  const fields=close?'adress_forest,subarea_id,arodes_int_num,site_type_cd,silviculture_cd,forest_func_cd,stand_struct_cd,rotation_age,sub_area,prot_category_cd,species_cd_d,part_cd,species_age,a_year':'adress_forest,compartment_cd,arodes_int_num,a_year';
-  const params=new URLSearchParams({where:'1=1',geometry:`${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`,geometryType:'esriGeometryEnvelope',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:fields,returnGeometry:'true',outSR:'4326',geometryPrecision:'5',resultRecordCount:'2000',f:'geojson'});
-  const r=await fetch(bdlQueryUrl(layerId,params),{cache:'no-store'});if(!r.ok)throw new Error('BDL vector HTTP '+r.status);
-  const j=await r.json();if(seq!==bdlVectorSeq)return;
+  const queryLayer=async(layerId,fields)=>{
+   const params=new URLSearchParams({where:'1=1',geometry:`${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`,geometryType:'esriGeometryEnvelope',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:fields,returnGeometry:'true',outSR:'4326',geometryPrecision:'5',resultRecordCount:'2000',f:'geojson'});
+   const r=await fetch(bdlQueryUrl(layerId,params),{cache:'no-store'});if(!r.ok)throw new Error('BDL vector HTTP '+r.status);return (await r.json()).features||[];
+  };
+  const compFeatures=await queryLayer(3,'adress_forest,compartment_cd,a_year');
+  if(seq!==bdlVectorSeq)return;
+  const subFeatures=z>=14?await queryLayer(5,'adress_forest,subarea_id,arodes_int_num,site_type_cd,silviculture_cd,forest_func_cd,stand_struct_cd,rotation_age,sub_area,prot_category_cd,species_cd_d,part_cd,species_age,a_year'):[];
+  if(seq!==bdlVectorSeq)return;
   if(bdlVectorLayer)map.removeLayer(bdlVectorLayer);if(bdlLabelLayer)map.removeLayer(bdlLabelLayer);
-  bdlVectorLayer=L.geoJSON(j.features||[],{style:{color:'#444',weight:1,opacity:.9,fill:false},onEachFeature:(f,l)=>{l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLFeature(f,e.latlng)})}});
+  const all=[];
+  const compLayer=L.geoJSON(compFeatures,{style:{color:'#777',weight:1,opacity:.95,fill:false},onEachFeature:(f,l)=>{l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLFeature(f,e.latlng)})}});
+  all.push(compLayer);
+  if(subFeatures.length){
+   const subLayer=L.geoJSON(subFeatures,{style:{color:'#444',weight:1,opacity:.85,fill:false},onEachFeature:(f,l)=>{l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLFeature(f,e.latlng)})}});
+   all.push(subLayer);
+  }
+  bdlVectorLayer=L.layerGroup(all);
   bdlLabelLayer=L.layerGroup();
-  (j.features||[]).forEach(f=>{
-    const p=f.properties||f.attributes||{},c=geometryCenter(f.geometry),txt=bdlVectorLabel(p,z);if(!c||!txt)return;
-    const m=L.marker(c,{interactive:true,icon:L.divIcon({className:'bdlTextLabel',html:esc(txt),iconSize:null,iconAnchor:[0,0]})});
-    m.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLFeature(f,e.latlng)});bdlLabelLayer.addLayer(m);
-  });
+  const addLabel=(feature,text,cls='bdlTextLabel')=>{const c=geometryCenter(feature.geometry);if(!c||!text)return;const m=L.marker(c,{interactive:true,icon:L.divIcon({className:cls,html:esc(text),iconSize:null,iconAnchor:[0,0]})});m.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLFeature(feature,e.latlng)});bdlLabelLayer.addLayer(m)};
+  if(z>=10&&z<14){
+   compFeatures.forEach(f=>{const p=bdlFeatureAttributes(f);addLabel(f,p.compartment_cd||'')});
+  }else if(z>=14){
+   compFeatures.forEach(f=>{const p=bdlFeatureAttributes(f);addLabel(f,p.compartment_cd||'','bdlCompartmentLabel')});
+   subFeatures.forEach(f=>{const p=bdlFeatureAttributes(f);const sub=p.subarea_cd||String(p.adress_forest||'').split('-').slice(-2).join('-');const sp=p.species_cd_d||p.species_cd||'';const age=p.species_age??'';const txt=[sub,[sp,age].filter(v=>v!==''&&v!=null).join(' ')].filter(Boolean).join(' ');addLabel(f,txt,'bdlSubareaLabel')});
+  }
   bdlVectorLayer.addTo(map);bdlLabelLayer.addTo(map);updateBDLLabelToggle();
  }catch(e){console.warn('BDL vector overlay',e)}finally{bdlVectorBusy=false}
 }
@@ -117,8 +140,22 @@ function bdlPopupHtml(g,species){
  const general=[row('Adres leśny',a.adress_forest),row('Forma własności',a.owner_cat_name),row('RDLP',a.region_name),row('Nadleśnictwo',a.inspectorate_name),row('Obręb',a.forest_dist_name),row('Leśnictwo',a.forest_range_name),row('Województwo',a.county_name),row('Powiat',a.district_name),row('Gmina',a.municipality_name),row('Obręb ewidencyjny',a.community_name),row('Oddział i wydzielenie',[a.compartment_cd,a.subarea_cd].filter(Boolean).join('')),row('Stan na rok',a.a_year)].join('');
  const dane=[row('Powierzchnia (ha)',a.sub_area),row('Gospodarstwo',a.silviculture_cd),row('Wiek rębności',a.rotation_age),row('Rodzaj powierzchni',a.area_type_cd),row('Budowa pionowa',a.stand_struct_cd),row('TSL',a.site_type_cd),row('Stopień degradacji',a.degradation_cd),row('Uwodnienie',a.moisture_name),row('Typ gleby',a.soil_subtype_cd),row('Pokrywa',a.veg_cover_name),row('Zespół roślinny',a.plant_comm_name),row('Kategoria ochronności',a.prot_category_name),row('Funkcja lasu',a.forest_func_name),row('Siedlisko przyrodnicze',a.arod_prot_site_desc),row('Przyczyna uszkodzenia',a.cause_cd),row('Procent uszkodzenia',a.damage_degree)].join('');
  let speciesHtml='';
- if(a.storey_species_desc)speciesHtml=`<div class="bdlSpeciesText">${esc(a.storey_species_desc).replace(/\n/g,'<br>')}</div>`;
- else if(species?.length)speciesHtml=species.map(x=>{const p=bdlFeatureAttributes(x);return `<div class="bdlSpeciesRow"><b>${esc(bdlVal(p.species_cd))}</b><span>Udział: ${esc(bdlVal(p.part_cd))}</span><span>Wiek: ${esc(bdlVal(p.species_age))}</span><span>Warstwa: ${esc(bdlVal(p.storey_cd))}</span></div>`}).join('');
+ const speciesFromDesc=(raw)=>{
+   const vals=String(raw||'').split(';').map(v=>v.trim()).filter(v=>v!=='');
+   if(vals.length<4)return '';
+   const rows=[];
+   for(let i=0;i+3<vals.length;i+=10){
+     const r=vals.slice(i,i+10); if(r.length<4)break;
+     const layer=r[2]||'', speciesCode=r[3]||'', part=r[4]||'', age=r[5]||'';
+     if(!speciesCode && !layer)continue;
+     const extra=r.slice(6).filter(Boolean).join(' · ');
+     rows.push(`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',layer)}${row('Gatunek',speciesCode)}${row('Udział',part)}${row('Wiek',age)}${extra?row('Pozostałe dane BDL',extra):''}</div></div>`);
+   }
+   return rows.join('');
+ };
+ const parsedSpecies=speciesFromDesc(a.storey_species_desc);
+ if(parsedSpecies)speciesHtml=parsedSpecies;
+ else if(species?.length)speciesHtml=species.map(x=>{const p=bdlFeatureAttributes(x);return `<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',p.storey_cd)}${row('Gatunek',p.species_cd)}${row('Udział',p.part_cd)}${row('Wiek',p.species_age)}</div></div>`}).join('');
  else speciesHtml='<div class="muted">Brak szczegółowych danych o gatunkach.</div>';
  const section=(title,id,body,open)=>`<button type="button" class="bdlSectionTitle bdlSectionToggle" data-bdl-section="${id}" aria-expanded="${open?'true':'false'}">${title}<span class="bdlChevron">${open?'▾':'▸'}</span></button><div id="${id}" class="bdlSectionBody" ${open?'':'hidden'}>${body}</div>`;
  return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div>${section('ADRES','bdlAdresBody',`<div class="bdlRows">${general}</div>`,true)}${section('DANE OGÓLNE','bdlDaneBody',`<div class="bdlRows">${dane}</div>`,false)}${section('GATUNKI','bdlGatunkiBody',speciesHtml,false)}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
