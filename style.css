@@ -71,3 +71,12 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 /* NestMap v8.21.13: BDL labels and vertical species description */
 .bdlSpeciesBlock{padding:4px 0 7px;margin-bottom:5px;border-bottom:1px solid #dfe5e1}.bdlSpeciesBlock:last-child{border-bottom:0}.bdlSpeciesBlock .bdlRow{padding:4px 0}.bdlSpeciesBlock .bdlRow b{font-weight:400}.bdlCompartmentLabel,.bdlSubareaLabel{background:transparent!important;border:0!important;box-shadow:none!important;white-space:nowrap;color:#3f3f3f;font-family:Arial,sans-serif;font-weight:700;line-height:1.05;text-shadow:0 1px 2px #fff,0 -1px 2px #fff,1px 0 2px #fff,-1px 0 2px #fff;pointer-events:auto}.bdlCompartmentLabel{font-size:12px}.bdlSubareaLabel{font-size:10px}.bdlCompartmentLabel:before,.bdlSubareaLabel:before{display:none!important}
 @media(max-width:600px){.bdlCompartmentLabel{font-size:11px}.bdlSubareaLabel{font-size:9px}.bdlSpeciesBlock .bdlRow{padding:3px 0}}
+
+/* NestMap v8.21.14: map controls slightly larger; BDL remains readable on phone. */
+.mapFixedControls .mapCtl{font-size:13.5px;padding:10px 12px;border-radius:11px;line-height:1.2}
+.bdlRawText{line-height:1.5;padding:6px 0;white-space:normal}
+@media(max-width:600px){
+  .mapFixedControls{right:7px;top:7px;gap:7px}
+  .mapFixedControls .mapCtl{font-size:13px;padding:9px 11px}
+  .bdlRawText{font-size:12px;line-height:1.45}
+}
