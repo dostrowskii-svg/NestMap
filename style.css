@@ -61,3 +61,9 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 
 /* NestMap v8.21.11: compact control tabs; action row stays single-line without horizontal scrolling. */
 .compactTabs{display:grid!important;grid-template-columns:repeat(4,1fr);gap:6px!important}.compactTabs .tab{min-width:0;padding:8px 6px!important;text-align:center}.nestActions{flex-wrap:nowrap;overflow:visible!important}.nestActions button{flex:0 0 auto}.bdlTextLabel{z-index:1500!important;color:#111!important;font-weight:700!important;text-shadow:0 1px 2px #fff,0 -1px 2px #fff,1px 0 2px #fff,-1px 0 2px #fff}
+
+/* NestMap v8.21.12 */
+.controlNumberLabel{font-weight:700;margin:4px 0 6px;font-size:14px}.bdlSectionToggle{width:100%;border:0;cursor:pointer;display:flex;justify-content:space-between;align-items:center}.bdlSectionBody[hidden]{display:none}.bdlChevron{font-size:14px;margin-left:8px}.bdlInfoPanel{max-height:calc(100% - 16px);overflow-y:auto;overscroll-behavior:contain}.bdlRows{padding-bottom:2px}
+.nestActions{display:grid!important;grid-template-columns:1.28fr .9fr .9fr .82fr .72fr;gap:5px!important;overflow:visible!important;width:100%}.nestActions button{min-width:0;width:100%;padding:8px 4px;font-size:12px}.nestActions #editNestBtn{white-space:nowrap}.compactTabs{margin-top:0}
+.mapFixedControls .mapCtl{font-size:13px;padding:9px 11px;border-radius:10px;line-height:1.15;white-space:nowrap;box-shadow:0 2px 8px #0002}
+@media(max-width:600px){.mapFixedControls{right:7px;top:7px;gap:6px}.mapFixedControls .mapCtl{font-size:12px;padding:8px 9px}.nestActions{grid-template-columns:1.35fr .9fr .95fr .82fr .7fr}.nestActions button{font-size:11px;padding:8px 3px}.controlNumberLabel{font-size:14px}.bdlInfoPanel{width:min(390px,calc(100% - 16px));left:8px;right:8px;font-size:12px}.bdlSectionTitle{font-size:12px;padding:8px}.bdlTextLabel{font-size:10px}}

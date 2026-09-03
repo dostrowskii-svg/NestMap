@@ -2,7 +2,7 @@ const $=id=>document.getElementById(id);
 const STORAGE='nestmap-nests-v5';
 const OBS=['para','zaniepokojone dorosłe','dorosły noszący materiał gniazdowy','ptak latający w pobliżu gniazda','krążący ptak','ptak zlatujący z gniazda','dorosłe ze skorupkami jaj','dorosły z pokarmem','inkubacja','pisklęta w gnieździe','świeże gałązki','napuszone gniazdo','puch na gnieździe','pióra na gnieździe','pióra pod drzewem','odchody','skorupki jaj','wypluwki','ofiary w okolicy gniazda','brak śladów użytkowania','nocujące ptaki na lub przy gnieździe'];
 let nests=JSON.parse(localStorage.getItem(STORAGE)||'[]');
-let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
+let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
 const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',});
 const now=()=>{const d=new Date();return {date:d.toLocaleDateString('en-CA'),time:d.toTimeString().slice(0,5)}};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -18,8 +18,9 @@ function initMap(){
  const imagery=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:19,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'Tiles © Esri'}).addTo(map); window.__nmImagery=imagery;
  const streets=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,attribution:'© OpenStreetMap'}); window.__nmStreets=streets;
  bdlLayer=L.tileLayer.wms('https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer',{layers:'11',format:'image/png',transparent:false,version:'1.3.0',opacity:1,attribution:'BDL Lasy Państwowe',uppercase:true,tileSize:256,keepBuffer:2,updateWhenZooming:false,updateWhenIdle:true});
+ bdlBoundaryLayer=L.tileLayer.wms('https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer',{layers:'3',format:'image/png',transparent:true,version:'1.3.0',opacity:1,uppercase:true,tileSize:256,keepBuffer:2,updateWhenZooming:false,updateWhenIdle:true});
  const cross=document.createElement('div');cross.className='crosshair';cross.textContent='＋';$('map').appendChild(cross);
- map.on('load moveend zoomend',()=>{setTimeout(()=>map.invalidateSize(false),50);if(bdlEnabled)refreshBDLVectorOverlay();});
+ map.on('load moveend zoomend',()=>{setTimeout(()=>map.invalidateSize(false),50);if(bdlEnabled){setBDLBoundaryLayer();refreshBDLVectorOverlay();}});
  map.on('click',e=>{if(bdlEnabled)showBDLAtPoint(e.latlng)});
  setTimeout(()=>map.invalidateSize(true),300);
  if(navigator.geolocation&&!nests.length) navigator.geolocation.getCurrentPosition(p=>map.setView([p.coords.latitude,p.coords.longitude],15),()=>{},{enableHighAccuracy:true,timeout:8000,maximumAge:60000});
@@ -43,11 +44,14 @@ function toggleBDL(){
    if(map.hasLayer(window.__nmImagery))map.removeLayer(window.__nmImagery);
    if(map.hasLayer(window.__nmStreets))map.removeLayer(window.__nmStreets);
    bdlLayer.addTo(map);
+   setBDLBoundaryLayer();
    if(btn){btn.classList.add('active');btn.textContent='🌲 Drzewostany BDL ✓'}
    $('mapStatus').textContent='Drzewostany BDL są dostępne online. Kliknij wydzielenie, aby zobaczyć opis.';
    ensureBDLInfoPanel();refreshBDLVectorOverlay();
  }else{
-   map.removeLayer(bdlLayer);closeBDLInfo();
+   map.removeLayer(bdlLayer);
+   if(bdlBoundaryLayer&&map.hasLayer(bdlBoundaryLayer))map.removeLayer(bdlBoundaryLayer);
+   closeBDLInfo();
    if(baseMapMode==='streets')window.__nmStreets.addTo(map);else window.__nmImagery.addTo(map);
    if(btn){btn.classList.remove('active');btn.textContent='🌲 Drzewostany BDL'}
    if(bdlVectorLayer){map.removeLayer(bdlVectorLayer);bdlVectorLayer=null}
@@ -73,8 +77,16 @@ function bdlVectorLabel(p,zoom){
 function bdlQueryUrl(layerId, params){
  return `https://mapserver.bdl.lasy.gov.pl/arcgis/rest/services/WMS_BDL_mapa_drzewostanow/MapServer/${layerId}/query?${params}`;
 }
+function setBDLBoundaryLayer(){
+ if(!bdlEnabled||!bdlBoundaryLayer||!map)return;
+ const z=map.getZoom();
+ const layer=z>=14?'5':'3';
+ bdlBoundaryLayer.setParams({layers:layer});
+ if(!map.hasLayer(bdlBoundaryLayer))bdlBoundaryLayer.addTo(map);
+}
 async function refreshBDLVectorOverlay(){
  if(!bdlEnabled||!map||map.getZoom()<8){
+   if(bdlBoundaryLayer&&map.hasLayer(bdlBoundaryLayer))map.removeLayer(bdlBoundaryLayer);
    if(bdlVectorLayer){map.removeLayer(bdlVectorLayer);bdlVectorLayer=null}
    if(bdlLabelLayer){map.removeLayer(bdlLabelLayer);bdlLabelLayer=null}
    return
@@ -105,12 +117,13 @@ function bdlPopupHtml(g,species){
  const general=[row('Adres leśny',a.adress_forest),row('Forma własności',a.owner_cat_name),row('RDLP',a.region_name),row('Nadleśnictwo',a.inspectorate_name),row('Obręb',a.forest_dist_name),row('Leśnictwo',a.forest_range_name),row('Województwo',a.county_name),row('Powiat',a.district_name),row('Gmina',a.municipality_name),row('Obręb ewidencyjny',a.community_name),row('Oddział i wydzielenie',[a.compartment_cd,a.subarea_cd].filter(Boolean).join('')),row('Stan na rok',a.a_year)].join('');
  const dane=[row('Powierzchnia (ha)',a.sub_area),row('Gospodarstwo',a.silviculture_cd),row('Wiek rębności',a.rotation_age),row('Rodzaj powierzchni',a.area_type_cd),row('Budowa pionowa',a.stand_struct_cd),row('TSL',a.site_type_cd),row('Stopień degradacji',a.degradation_cd),row('Uwodnienie',a.moisture_name),row('Typ gleby',a.soil_subtype_cd),row('Pokrywa',a.veg_cover_name),row('Zespół roślinny',a.plant_comm_name),row('Kategoria ochronności',a.prot_category_name),row('Funkcja lasu',a.forest_func_name),row('Siedlisko przyrodnicze',a.arod_prot_site_desc),row('Przyczyna uszkodzenia',a.cause_cd),row('Procent uszkodzenia',a.damage_degree)].join('');
  let speciesHtml='';
- if(a.storey_species_desc){speciesHtml=`<div class="bdlSpeciesText">${esc(a.storey_species_desc).replace(/\n/g,'<br>')}</div>`}
- else if(species?.length){speciesHtml=species.map(x=>{const p=bdlFeatureAttributes(x);return `<div class="bdlSpeciesRow"><b>${esc(bdlVal(p.species_cd))}</b><span>Udział: ${esc(bdlVal(p.part_cd))}</span><span>Wiek: ${esc(bdlVal(p.species_age))}</span><span>Warstwa: ${esc(bdlVal(p.storey_cd))}</span></div>`}).join('')}
+ if(a.storey_species_desc)speciesHtml=`<div class="bdlSpeciesText">${esc(a.storey_species_desc).replace(/\n/g,'<br>')}</div>`;
+ else if(species?.length)speciesHtml=species.map(x=>{const p=bdlFeatureAttributes(x);return `<div class="bdlSpeciesRow"><b>${esc(bdlVal(p.species_cd))}</b><span>Udział: ${esc(bdlVal(p.part_cd))}</span><span>Wiek: ${esc(bdlVal(p.species_age))}</span><span>Warstwa: ${esc(bdlVal(p.storey_cd))}</span></div>`}).join('');
  else speciesHtml='<div class="muted">Brak szczegółowych danych o gatunkach.</div>';
- return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div><div class="bdlSectionTitle">ADRES</div><div class="bdlRows">${general}</div><div class="bdlSectionTitle">DANE OGÓLNE</div><div class="bdlRows">${dane}</div><div class="bdlSectionTitle">GATUNKI</div>${speciesHtml}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
+ const section=(title,id,body,open)=>`<button type="button" class="bdlSectionTitle bdlSectionToggle" data-bdl-section="${id}" aria-expanded="${open?'true':'false'}">${title}<span class="bdlChevron">${open?'▾':'▸'}</span></button><div id="${id}" class="bdlSectionBody" ${open?'':'hidden'}>${body}</div>`;
+ return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div>${section('ADRES','bdlAdresBody',`<div class="bdlRows">${general}</div>`,true)}${section('DANE OGÓLNE','bdlDaneBody',`<div class="bdlRows">${dane}</div>`,false)}${section('GATUNKI','bdlGatunkiBody',speciesHtml,false)}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
 }
-function showBDLInfo(g,species){const p=ensureBDLInfoPanel();p.innerHTML=bdlPopupHtml(g,species);p.hidden=false;const c=p.querySelector('.bdlClose');if(c)c.onclick=e=>{e.stopPropagation();closeBDLInfo()};}
+function showBDLInfo(g,species){const p=ensureBDLInfoPanel();p.innerHTML=bdlPopupHtml(g,species);p.hidden=false;const c=p.querySelector('.bdlClose');if(c)c.onclick=e=>{e.stopPropagation();closeBDLInfo()};p.querySelectorAll('.bdlSectionToggle').forEach(b=>b.onclick=e=>{e.stopPropagation();const body=p.querySelector('#'+b.dataset.bdlSection);if(!body)return;const open=body.hidden;body.hidden=!open;b.setAttribute('aria-expanded',String(open));const ch=b.querySelector('.bdlChevron');if(ch)ch.textContent=open?'▾':'▸'});p.onclick=e=>e.stopPropagation();}
 function webMercator(lat,lon){
  const x=lon*20037508.34/180;
  const y=Math.log(Math.tan((90+lat)*Math.PI/360))/(Math.PI/180);
@@ -209,7 +222,7 @@ async function exportCSV(){
 function exportGeoJSON(){const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));return {type:'FeatureCollection',features:list.map(n=>({type:'Feature',geometry:{type:'Point',coordinates:[n.lon,n.lat]},properties:{kod:n.label,gatunek:n.bird,kod_gatunku:n.birdCode,rok:nestYears(n).join(',')}}))}}
 function kmzValue(v){return v==null||v===''?'—':String(v)}
 function kmzControlHtml(c,i){const obs=(c.observations||[]).join(', ');return `<h3>Kontrola ${i+1}</h3><table><tr><td>Data</td><td>${esc(kmzValue(c.date))}</td></tr><tr><td>Czas</td><td>${esc(kmzValue(c.time))}</td></tr><tr><td>Kryterium lęgowości</td><td>${esc(kmzValue(c.criterion))}</td></tr><tr><td>Obserwacje</td><td>${esc(kmzValue(obs))}</td></tr><tr><td>Liczebność</td><td>${esc(kmzValue(c.count))}</td></tr><tr><td>Liczba piskląt</td><td>${esc(kmzValue(c.chicks))}</td></tr><tr><td>Drzewo</td><td>${esc(kmzValue(c.tree))}</td></tr><tr><td>Kod drzewa</td><td>${esc(kmzValue(c.treeCode))}</td></tr><tr><td>Uwagi</td><td>${esc(kmzValue(c.notes))}</td></tr></table>`}
-function exportKMZ(){const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));if(!list.length)return alert('Brak gniazd spełniających wybrane filtry.');const k=list.map(n=>{const controls=(n.controls||[blankControl(),blankControl(),blankControl(),blankControl()]).map((c,i)=>kmzControlHtml(c||blankControl(),i)).join('');const desc=`<![CDATA[<div><h2>NestMap — ${esc(n.label||'gniazdo')}</h2><p><b>Gatunek:</b> ${esc(kmzValue(n.bird))}<br><b>Kod gatunku:</b> ${esc(kmzValue(n.birdCode))}<br><b>Numer:</b> ${esc(kmzValue(n.number))}<br><b>GPS:</b> ${esc(kmzValue(n.lat))}, ${esc(kmzValue(n.lon))}</p>${controls}</div>]]>`;return `<Placemark><name>${esc(n.label||'gniazdo')}</name><description>${desc}</description><Point><coordinates>${Number(n.lon)},${Number(n.lat)},0</coordinates></Point></Placemark>`}).join('');const kml=`<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>NestMap</name>${k}</Document></kml>`;const zip=zipStore([{name:'doc.kml',data:new TextEncoder().encode(kml)}]);downloadBlob(zip,'NestMap.kmz','application/vnd.google-earth.kmz')}
+function exportKMZ(){const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));if(!list.length)return alert('Brak gniazd spełniających wybrane filtry.');const k=list.map(n=>{const controls=(n.controls||[blankControl(),blankControl(),blankControl(),blankControl()]).map((c,i)=>kmzControlHtml(c||blankControl(),i)).join('');const desc=`<![CDATA[<div><h2>NestMap — ${esc(n.label||'KOD')}</h2><p><b>KOD:</b> ${esc(kmzValue(n.label))}<br><b>Gatunek:</b> ${esc(kmzValue(n.bird))}<br><b>Kod gatunku:</b> ${esc(kmzValue(n.birdCode))}<br><b>Numer:</b> ${esc(kmzValue(n.number))}<br><b>GPS:</b> ${esc(kmzValue(n.lat))}, ${esc(kmzValue(n.lon))}</p>${controls}</div>]]>`;return `<Placemark><name>${esc(n.label||'gniazdo')}</name><description>${desc}</description><Point><coordinates>${Number(n.lon)},${Number(n.lat)},0</coordinates></Point></Placemark>`}).join('');const kml=`<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>NestMap</name>${k}</Document></kml>`;const zip=zipStore([{name:'doc.kml',data:new TextEncoder().encode(kml)}]);downloadBlob(zip,'NestMap.kmz','application/vnd.google-earth.kmz')}
 function u16le(v){const a=new Uint8Array(2);new DataView(a.buffer).setUint16(0,v,true);return a}function u32le(v){const a=new Uint8Array(4);new DataView(a.buffer).setUint32(0,v>>>0,true);return a}function f64le(v){const a=new Uint8Array(8);new DataView(a.buffer).setFloat64(0,v,true);return a}function u32be(v){const a=new Uint8Array(4);new DataView(a.buffer).setUint32(0,v>>>0,false);return a}function ascii(s,n){const a=new Uint8Array(n);const b=new TextEncoder().encode(String(s??''));a.set(b.slice(0,n));return a}function concatBytes(...arrs){const n=arrs.reduce((s,a)=>s+a.length,0),o=new Uint8Array(n);let p=0;for(const a of arrs){o.set(a,p);p+=a.length}return o}function crc32(data){let c=0xffffffff;for(const b of data){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0)}return (c^0xffffffff)>>>0}function zipStore(files){const parts=[],central=[];let offset=0;for(const f of files){const name=ascii(f.name,f.name.length),d=f.data,crc=crc32(d),lh=concatBytes(u32le(0x04034b50),u16le(20),u16le(0),u16le(0),u16le(0),u16le(0),u32le(crc),u32le(d.length),u32le(d.length),u16le(name.length),u16le(0),name,d);parts.push(lh);central.push(concatBytes(u32le(0x02014b50),u16le(20),u16le(20),u16le(0),u16le(0),u16le(0),u16le(0),u32le(crc),u32le(d.length),u32le(d.length),u16le(name.length),u16le(0),u16le(0),u16le(0),u16le(0),u32le(0),u32le(offset),name));offset+=lh.length}const cd=concatBytes(...central),body=concatBytes(...parts),end=concatBytes(u32le(0x06054b50),u16le(0),u16le(0),u16le(files.length),u16le(files.length),u32le(cd.length),u32le(body.length),u16le(0));return concatBytes(body,cd,end)}
 function dbfField(name,type,len,dec=0){return concatBytes(ascii(name,11),ascii(type,1),new Uint8Array(4),new Uint8Array([len,dec]),new Uint8Array(14))}function dbfText(v,len){const a=new TextEncoder().encode(String(v??'')),o=new Uint8Array(len);o.fill(32);o.set(a.slice(0,len));return o}
 function buildShapefile(list,bdlDataMap={}){
