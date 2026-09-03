@@ -146,34 +146,43 @@ function showBDLFeature(f,latlng){showBDLAtPoint(latlng)}
 function parseBDLSpeciesDescription(raw){
  const text=String(raw??'').trim();
  if(!text)return [];
- let vals=[];
- try{
-   const parsed=JSON.parse(text);
-   if(Array.isArray(parsed)) vals=parsed.flat(Infinity).map(v=>String(v??'').trim());
- }catch{}
- if(!vals.length) vals=text.replace(/\r/g,'').replace(/\n/g,';').split(';').map(v=>v.trim());
  const rows=[];
  const isLayer=v=>/^(DRZEW|PODSZ|PODS|NAL|PRZESTR|PRZESTRZENNA)$/i.test(String(v??'').trim());
- // Standard mBDL representation: ten fields per species record. Empty
- // fields are significant, so they must NOT be filtered out before slicing.
- for(let i=0;i+3<vals.length;i+=10){
-   const r=vals.slice(i,i+10); if(r.length<4)break;
-   let layer=r[2]||'', speciesCode=r[3]||'', part=r[4]||'', age=r[5]||'';
-   if(!isLayer(layer) && isLayer(r[0])){layer=r[0]||'';speciesCode=r[1]||'';part=r[2]||'';age=r[3]||'';}
-   if(speciesCode && (isLayer(layer)||/^[A-ZĄĆĘŁŃÓŚŹŻ0-9.\-]+$/i.test(speciesCode))){
-     rows.push({layer,speciesCode,part,age,d13:r[6]||'',h:r[7]||'',bon:r[8]||'',zas:r[9]||'',extra:''});
+ const addRow=(r)=>{
+   if(!Array.isArray(r)||!r.length)return;
+   const a=r.map(v=>String(v??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim());
+   const li=a.findIndex(isLayer);
+   if(li>=0){
+     const layer=a[li], speciesCode=a[li+1]||'';
+     if(speciesCode)rows.push({layer,speciesCode,part:a[li+2]||'',age:a[li+3]||'',d13:a[li+4]||'',h:a[li+5]||'',bon:a[li+6]||'',zas:a[li+7]||'',extra:a.slice(li+8).filter(Boolean).join(' · ')});
+   }
+ };
+ // mBDL may return JSON arrays/objects in different deployments.
+ try{
+   const parsed=JSON.parse(text);
+   const walk=v=>{
+     if(Array.isArray(v)){ if(v.some(x=>isLayer(x))) addRow(v); else v.forEach(walk); }
+     else if(v&&typeof v==='object'){
+       if(v.layer||v.storey_cd||v.species_cd||v.speciesCode) rows.push({layer:v.layer||v.storey_cd||'',speciesCode:v.speciesCode||v.species_cd||'',part:v.part||v.part_cd||'',age:v.age||v.species_age||'',d13:v.d13||'',h:v.h||'',bon:v.bon||'',zas:v.zas||'',extra:v.extra||''});
+       Object.values(v).forEach(x=>{if(typeof x==='object')walk(x)});
+     }
+   };
+   walk(parsed);
+ }catch{}
+ if(rows.length)return rows;
+ // Plain mBDL text: records are commonly separated by line breaks/semicolons.
+ let vals=text.replace(/<br\s*\/?>/gi,';').replace(/\r/g,'').split(/[;\n]+/).map(v=>v.trim());
+ // If the backend emits one long flat record, retain empty slots and use 10-field chunks.
+ if(vals.length>=4){
+   for(let i=0;i+3<vals.length;i+=10){
+     const r=vals.slice(i,i+10), li=r.findIndex(isLayer);
+     if(li>=0) addRow(r);
    }
  }
  if(rows.length)return rows;
- // Last-resort parser for a labelled representation. This is intentionally
- // permissive so a BDL backend format change does not collapse to one species.
- const records=text.replace(/\r/g,'').split(/\n+/).map(v=>v.trim()).filter(Boolean);
- for(const rec of records){
-   const r=rec.split(/[;,|]+/).map(v=>v.trim()).filter(Boolean);
-   const li=r.findIndex(isLayer); if(li<0)continue;
-   const speciesCode=r[li+1]||''; if(!speciesCode)continue;
-   rows.push({layer:r[li],speciesCode,part:r[li+2]||'',age:r[li+3]||'',d13:r[li+4]||'',h:r[li+5]||'',bon:r[li+6]||'',zas:r[li+7]||'',extra:r.slice(li+8).join(' · ')});
- }
+ // Fallback: find every occurrence of a layer marker and take following fields.
+ const tokens=text.replace(/<br\s*\/?>/gi,';').split(/[;,|\n\t]+/).map(v=>v.trim()).filter(Boolean);
+ for(let i=0;i<tokens.length;i++)if(isLayer(tokens[i]))addRow(tokens.slice(i,i+10));
  return rows;
 }
 function bdlPopupHtml(g,species){
@@ -234,7 +243,7 @@ async function showBDLAtPoint(latlng){
   if(!parsed.length && general.storey_species_desc){
     console.warn('BDL: nie udało się sparsować storey_species_desc',general.storey_species_desc);
   }
-  showBDLInfo(general,null);
+  showBDLInfo(general,parsed);
   $('mapStatus').textContent=`BDL: ${general.adress_forest||'wydzielenie'}`;
  }catch(e){console.warn(e);$('mapStatus').textContent='Nie udało się pobrać danych BDL. Sprawdź połączenie z internetem.'}
  finally{bdlBusy=false}
@@ -288,10 +297,10 @@ function csvEscape(v){return '"'+String(v??'').replaceAll('"','""')+'"'}
 async function reverseGeocode(lat,lon){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,{headers:{'Accept-Language':'pl'}});const j=await r.json(),a=j.address||{};return {miejscowosc:a.village||a.town||a.city||a.hamlet||'',gmina:a.municipality||a.city_district||'',wojewodztwo:a.state||''}}catch{return {miejscowosc:'',gmina:'',wojewodztwo:''}}}
 async function fetchBDLExportData(n){
  try{
-  const p=new URLSearchParams({where:'1=1',geometry:`${n.lon},${n.lat}`,geometryType:'esriGeometryPoint',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:'adress_forest,compartment_cd,subarea_cd,species_cd,species_age,site_type_cd,storey_species_desc,a_year',returnGeometry:'false',f:'json'});
+  const p=new URLSearchParams({where:'1=1',geometry:`${n.lon},${n.lat}`,geometryType:'esriGeometryPoint',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:'adress_forest,compartment_cd,subarea_cd,species_cd_d,species_cd,species_age,site_type_cd,storey_species_desc,a_year',returnGeometry:'false',f:'json'});
   const r=await fetch(`${BDL_VECTOR_URL}?${p}`,{cache:'no-store'});if(!r.ok)throw new Error('BDL export HTTP '+r.status);const j=await r.json();const a=j.features?.[0]?.attributes||{};
   const parts=String(a.adress_forest||'').split('-').map(x=>x.trim()).filter(Boolean);
-  return {bdlAddress:a.adress_forest||'',bdlCompartment:a.subarea_cd||parts[parts.length-1]||'',bdlAge:a.species_age??'',bdlSpecies:a.species_cd||'',bdlTSL:a.site_type_cd||''};
+  return {bdlAddress:a.adress_forest||'',bdlCompartment:a.subarea_cd||parts[parts.length-1]||'',bdlAge:a.species_age??'',bdlSpecies:a.species_cd_d||a.species_cd||'',bdlTSL:a.site_type_cd||''};
  }catch{return {bdlAddress:'',bdlCompartment:'',bdlAge:'',bdlSpecies:'',bdlTSL:''}}
 }
 async function exportCSV(){
