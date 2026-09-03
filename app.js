@@ -3,7 +3,7 @@ const STORAGE='nestmap-nests-v5';
 const OBS=['para','zaniepokojone dorosłe','dorosły noszący materiał gniazdowy','ptak latający w pobliżu gniazda','krążący ptak','ptak zlatujący z gniazda','dorosłe ze skorupkami jaj','dorosły z pokarmem','inkubacja','pisklęta w gnieździe','świeże gałązki','napuszone gniazdo','puch na gnieździe','pióra na gnieździe','pióra pod drzewem','odchody','skorupki jaj','wypluwki','ofiary w okolicy gniazda','brak śladów użytkowania','nocujące ptaki na lub przy gnieździe'];
 let nests=JSON.parse(localStorage.getItem(STORAGE)||'[]').filter(n=>!n?.draft);
 save();
-let map,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlForestWms=null,bdlWmtsLayer=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
+let map,nestMarkerLayer=null,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlForestWms=null,bdlWmtsLayer=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
 const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',});
 const now=()=>{const d=new Date();return {date:d.toLocaleDateString('en-CA'),time:d.toTimeString().slice(0,5)}};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -16,6 +16,7 @@ async function putCachedTile(key,blob){try{const db=await openTileDB();await new
 async function cacheTileUrl(url){try{const r=await fetch(url,{mode:'cors',cache:'reload'});if(!r.ok)return false;const cache=await caches.open('nestmap-map-tiles-v2');await cache.put(url,r.clone());return true}catch{return false}}
 function initMap(){
  map=L.map('map',{zoomControl:false,scrollWheelZoom:true,doubleClickZoom:true,touchZoom:true,boxZoom:true,keyboard:true,minZoom:2,maxZoom:19,worldCopyJump:false,zoomSnap:1,zoomDelta:1,zoomAnimation:true,fadeAnimation:true,markerZoomAnimation:true,preferCanvas:true,attributionControl:true}).setView([52.1,19.4],6);
+ nestMarkerLayer=L.layerGroup().addTo(map);
  const imagery=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:19,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'Tiles © Esri'}).addTo(map); window.__nmImagery=imagery;
  const streets=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,attribution:'© OpenStreetMap'}); window.__nmStreets=streets;
  const bdlWms='https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer';
@@ -26,7 +27,7 @@ function initMap(){
  const bdlWmts='https://mapserver.bdl.lasy.gov.pl/arcgis/rest/services/WMTS_BDL_mapa_drzewostanow/MapServer/tile/{z}/{y}/{x}';
  bdlWmtsLayer=L.tileLayer(bdlWmts,{minZoom:6,maxZoom:19,minNativeZoom:6,maxNativeZoom:17,tileSize:256,opacity:1,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'BDL · Lasy Państwowe'}).setZIndex(405);
  // Keep legacy WMS objects only for compatibility; they are NOT added to the map.
- bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11,9,7',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:0,tileSize:256}).setZIndex(404);
+ bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11,9,7',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,tileSize:256}).setZIndex(404);
  bdlCompartmentBoundaryLayer=null;
  bdlSubareaBoundaryLayer=null;
  // Keep a group variable for compatibility with the rest of the app.
@@ -143,47 +144,38 @@ async function refreshBDLVectorOverlay(){
 function bdlFeatureAttributes(f){return f?.attributes||f?.properties||{}}
 function showBDLFeature(f,latlng){showBDLAtPoint(latlng)}
 function parseBDLSpeciesDescription(raw){
-   const text=String(raw||'').replace(/<[^>]*>/g,' ').replace(/\r/g,' ').replace(/\n+/g,' ').replace(/\s+/g,' ').trim();
-   if(!text)return [];
-   // mBDL stores the complete stand composition in one text field.  Depending
-   // on the current BDL backend, records can be separated by semicolons,
-   // pipes, newlines, or simply by the next layer name. Split on layer names
-   // so every species from every layer can be shown vertically.
-   const layerRe=/(DRZEW|PODSZ|PODS|NAL|PODSZYT|PRZESTRZEN|PRZESTRZENNA)\b/gi;
-   const hits=[]; let m;
-   while((m=layerRe.exec(text))!==null)hits.push({layer:m[1].toUpperCase(),start:m.index,end:layerRe.lastIndex});
-   const blocks=[];
-   if(hits.length){
-     for(let i=0;i<hits.length;i++){
-       const rawBlock=text.slice(hits[i].end,i+1<hits.length?hits[i+1].start:text.length)
-         .replace(/^[;|,\s]+|[;|,\s]+$/g,'').trim();
-       if(!rawBlock)continue;
-       const clean=rawBlock.replace(/[;|]+/g,' ').replace(/\s+/g,' ').trim();
-       const tok=clean.split(' ').filter(Boolean);
-       if(!tok.length)continue;
-       const speciesCode=tok.shift();
-       // Typical mBDL order is: udział, wiek, D13, H, bonitacja, zasobność.
-       const part=tok[0]||'';
-       const age=tok[1]||'';
-       const d13=tok[2]||'';
-       const h=tok[3]||'';
-       const bon=tok[4]||'';
-       const zas=tok[5]||'';
-       const extra=tok.slice(6).join(' ');
-       if(!speciesCode)continue;
-       blocks.push({layer:hits[i].layer,speciesCode,part,age,d13,h,bon,zas,extra});
-     }
+ const text=String(raw??'').trim();
+ if(!text)return [];
+ let vals=[];
+ try{
+   const parsed=JSON.parse(text);
+   if(Array.isArray(parsed)) vals=parsed.flat(Infinity).map(v=>String(v??'').trim());
+ }catch{}
+ if(!vals.length) vals=text.replace(/\r/g,'').replace(/\n/g,';').split(';').map(v=>v.trim());
+ const rows=[];
+ const isLayer=v=>/^(DRZEW|PODSZ|PODS|NAL|PRZESTR|PRZESTRZENNA)$/i.test(String(v??'').trim());
+ // Standard mBDL representation: ten fields per species record. Empty
+ // fields are significant, so they must NOT be filtered out before slicing.
+ for(let i=0;i+3<vals.length;i+=10){
+   const r=vals.slice(i,i+10); if(r.length<4)break;
+   let layer=r[2]||'', speciesCode=r[3]||'', part=r[4]||'', age=r[5]||'';
+   if(!isLayer(layer) && isLayer(r[0])){layer=r[0]||'';speciesCode=r[1]||'';part=r[2]||'';age=r[3]||'';}
+   if(speciesCode && (isLayer(layer)||/^[A-ZĄĆĘŁŃÓŚŹŻ0-9.\-]+$/i.test(speciesCode))){
+     rows.push({layer,speciesCode,part,age,d13:r[6]||'',h:r[7]||'',bon:r[8]||'',zas:r[9]||'',extra:''});
    }
-   // Fallback for a compact semicolon-delimited representation.
-   if(!blocks.length){
-     for(const piece of text.split(/[;|]+/).map(x=>x.trim()).filter(Boolean)){
-       const tok=piece.split(/\s+/).filter(Boolean); if(tok.length<2)continue;
-       const layer=/^(DRZEW|PODSZ|PODS|NAL)$/i.test(tok[0])?tok.shift().toUpperCase():'', speciesCode=tok.shift()||'';
-       if(layer&&speciesCode)blocks.push({layer,speciesCode,part:tok[0]||'',age:tok[1]||'',d13:tok[2]||'',h:tok[3]||'',bon:tok[4]||'',zas:tok[5]||'',extra:tok.slice(6).join(' ')});
-     }
-   }
-   return blocks;
  }
+ if(rows.length)return rows;
+ // Last-resort parser for a labelled representation. This is intentionally
+ // permissive so a BDL backend format change does not collapse to one species.
+ const records=text.replace(/\r/g,'').split(/\n+/).map(v=>v.trim()).filter(Boolean);
+ for(const rec of records){
+   const r=rec.split(/[;,|]+/).map(v=>v.trim()).filter(Boolean);
+   const li=r.findIndex(isLayer); if(li<0)continue;
+   const speciesCode=r[li+1]||''; if(!speciesCode)continue;
+   rows.push({layer:r[li],speciesCode,part:r[li+2]||'',age:r[li+3]||'',d13:r[li+4]||'',h:r[li+5]||'',bon:r[li+6]||'',zas:r[li+7]||'',extra:r.slice(li+8).join(' · ')});
+ }
+ return rows;
+}
 function bdlPopupHtml(g,species){
  const a=g||{}, val=bdlVal, row=(label,v)=>`<div class="bdlRow"><span>${esc(label)}</span><b>${esc(val(v))}</b></div>`;
  const general=[row('Adres leśny',a.adress_forest),row('Forma własności',a.owner_cat_name),row('RDLP',a.region_name),row('Nadleśnictwo',a.inspectorate_name),row('Obręb',a.forest_dist_name),row('Leśnictwo',a.forest_range_name),row('Województwo',a.county_name),row('Powiat',a.district_name),row('Gmina',a.municipality_name),row('Obręb ewidencyjny',a.community_name),row('Oddział i wydzielenie',[a.compartment_cd,a.subarea_cd].filter(Boolean).join('')),row('Stan na rok',a.a_year)].join('');
@@ -207,7 +199,7 @@ function bdlPopupHtml(g,species){
    const parsed=parseBDLSpeciesDescription(a.storey_species_desc);
    if(parsed.length){speciesHtml=parsed.map(x=>`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',x.layer)}${row('Gatunek',x.speciesCode)}${row('Udział',x.part)}${row('Wiek',x.age)}${row('D13',x.d13)}${row('H',x.h)}${row('Bonitacja',x.bon)}${row('Zasobność',x.zas)}${x.extra?row('Pozostałe dane BDL',x.extra):''}</div></div>`).join('');}
  }
- if(!speciesHtml)speciesHtml='<div class="muted">Brak szczegółowych danych o gatunkach.</div>';
+ if(!speciesHtml){const raw=String(a.storey_species_desc||'').trim();speciesHtml=raw?`<div class="bdlRawSpecies">${esc(raw).replace(/;/g,';<br>')}</div>`:'<div class="muted">Brak szczegółowych danych o gatunkach.</div>';}
  const section=(title,id,body,open)=>`<button type="button" class="bdlSectionTitle bdlSectionToggle" data-bdl-section="${id}" aria-expanded="${open?'true':'false'}">${title}<span class="bdlChevron">${open?'▾':'▸'}</span></button><div id="${id}" class="bdlSectionBody" ${open?'':'hidden'}>${body}</div>`;
  return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div>${section('ADRES','bdlAdresBody',`<div class="bdlRows">${general}</div>`,true)}${section('DANE OGÓLNE','bdlDaneBody',`<div class="bdlRows">${dane}</div>`,false)}${section('GATUNKI','bdlGatunkiBody',speciesHtml,false)}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
 }
@@ -234,22 +226,16 @@ async function showBDLAtPoint(latlng){
   const r=await fetch(`${BDL_VECTOR_URL}?${p}`,{cache:'no-store'}); if(!r.ok)throw new Error('BDL HTTP');
   const j=await r.json(); if(seq!==bdlRequestSeq)return;
   const general=j.features?.[0]?.attributes||null;
-  let species=[];
-  if(general){
-    const where=general.subarea_id!=null ? `subarea_id=${Number(general.subarea_id)}` : `adress_forest='${String(general.adress_forest||'').replaceAll("'","''")}'`;
-    const sp=new URLSearchParams({where,outFields:'subarea_id,adress_forest,species_cd,part_cd,species_age,order_key,storey_cd,storey_rank_order,stand_struct_cd,lit,sub_area,rotation_age,rotation_age_class,grp_age,gat_grp,grp_age_int,a_year',returnGeometry:'false',f:'json',resultRecordCount:'2000'});
-    const rs=await fetch(`${bdlQueryUrl(11,sp)}`,{cache:'no-store'});
-    if(rs.ok){const js=await rs.json();species=(js.features||[]).sort((a,b)=>{const pa=bdlFeatureAttributes(a),pb=bdlFeatureAttributes(b);return (Number(pa.storey_rank_order)||999)-(Number(pb.storey_rank_order)||999)||String(pa.order_key||'').localeCompare(String(pb.order_key||''))});}
-    // Layer 11 may expose only the dominant map species.  The mobile BDL
-    // record carries the complete composition in storey_species_desc, so if
-    // fewer than two species were returned, render that complete description.
-    if(species.length<2 && general.storey_species_desc){
-      const parsed=parseBDLSpeciesDescription(general.storey_species_desc);
-      if(parsed.length)species=parsed;
-    }
+  if(!general){$('mapStatus').textContent='W tym miejscu nie znaleziono wydzielenia BDL.';closeBDLInfo();return}
+  // The mBDL service itself already contains the complete composition in
+  // storey_species_desc (up to 1600 characters). Do NOT replace it with the
+  // single dominant species from the thematic map layer.
+  const parsed=parseBDLSpeciesDescription(general.storey_species_desc);
+  if(!parsed.length && general.storey_species_desc){
+    console.warn('BDL: nie udało się sparsować storey_species_desc',general.storey_species_desc);
   }
-  if(!general&&!species.length){$('mapStatus').textContent='W tym miejscu nie znaleziono wydzielenia BDL.';closeBDLInfo();return}
-  showBDLInfo(general||bdlFeatureAttributes(species[0]),species);$('mapStatus').textContent=`BDL: ${(general||bdlFeatureAttributes(species[0])).adress_forest||'wydzielenie'}`;
+  showBDLInfo(general,null);
+  $('mapStatus').textContent=`BDL: ${general.adress_forest||'wydzielenie'}`;
  }catch(e){console.warn(e);$('mapStatus').textContent='Nie udało się pobrać danych BDL. Sprawdź połączenie z internetem.'}
  finally{bdlBusy=false}
 }
@@ -260,7 +246,7 @@ function nestYears(n){const ys=new Set();(n.controls||[]).forEach(c=>{if(c&&c.da
 function nestHasYear(n,y){return nestYears(n).includes(String(y))}
 function renderYearFilter(){const sel=$('yearFilter');if(!sel)return;const years=[...new Set(nests.flatMap(n=>nestYears(n)))].sort((a,b)=>b.localeCompare(a));sel.innerHTML='<option value="">Wszystkie lata</option>'+years.map(y=>`<option value="${esc(y)}">${esc(y)}</option>`).join('');sel.value=filterYear}
 function nestMatches(n){if(filterVisibility==='visible'&&n.hidden)return false;if(filterVisibility==='hidden'&&!n.hidden)return false;if(filterYear&&!nestHasYear(n,filterYear))return false;if(selectedSpeciesCodes.size&&!selectedSpeciesCodes.has(String(n.birdCode||'')))return false;const q=speciesQuery.trim().toLocaleLowerCase('pl-PL');if(!q)return true;return [n.bird,n.birdCode,n.label,n.id].some(v=>String(v??'').toLocaleLowerCase('pl-PL').includes(q))}
-function renderMarkers(){if(!map)return;map.eachLayer(l=>{if(l instanceof L.Marker)map.removeLayer(l)});if(!markersVisible)return;nests.filter(n=>n.lat&&n.lon&&!n.hidden&&!n.draft&&nestMatches(n)).forEach(n=>{const m=L.marker([n.lat,n.lon]).addTo(map);let tip=n.label||'gniazdo';m.bindTooltip(esc(tip),{permanent:true,direction:'top',className:'marker-label'});m.on('click',()=>openNest(n.id,false));})}
+function renderMarkers(){if(!map)return;if(!nestMarkerLayer)nestMarkerLayer=L.layerGroup().addTo(map);nestMarkerLayer.clearLayers();if(!markersVisible)return;nests.filter(n=>n.lat&&n.lon&&!n.hidden&&!n.draft&&nestMatches(n)).forEach(n=>{const m=L.marker([n.lat,n.lon]);let tip=n.label||'gniazdo';m.bindTooltip(esc(tip),{permanent:true,direction:'top',className:'marker-label'});m.on('click',()=>openNest(n.id,false));nestMarkerLayer.addLayer(m);})}
 function renderSpeciesFilter(){const box=$('speciesFilterList');if(!box)return;const q=speciesQuery.trim();const mapSpecies=new Map();nests.forEach(n=>{const code=String(n.birdCode||''),name=String(n.bird||'');if(code||name)mapSpecies.set(code,{code,name})});const items=[...mapSpecies.values()].filter(x=>!q||(x.name+' '+x.code).toLocaleLowerCase('pl-PL').includes(q.toLocaleLowerCase('pl-PL'))).sort((a,b)=>a.name.localeCompare(b.name,'pl'));box.hidden=!q;box.innerHTML=q?(items.length?items.map(x=>`<label class="speciesFilterItem"><input type="checkbox" data-species-filter="${esc(x.code)}" ${selectedSpeciesCodes.has(x.code)?'checked':''}> ${esc(x.name||'bez nazwy')} — <span>${esc(x.code)}</span> <button type="button" data-show-species="${esc(x.code)}" class="secondary">Pokaż</button></label>`).join(''):'<div class="muted">Brak pasującego gatunku.</div>'):'';box.querySelectorAll('[data-species-filter]').forEach(cb=>cb.addEventListener('change',()=>{if(cb.checked)selectedSpeciesCodes.add(cb.dataset.speciesFilter);else selectedSpeciesCodes.delete(cb.dataset.speciesFilter);renderMarkers()}));box.querySelectorAll('[data-show-species]').forEach(b=>b.onclick=()=>{selectedSpeciesCodes.clear();selectedSpeciesCodes.add(b.dataset.showSpecies);$('menuPanel').hidden=true;renderMarkers()})}
 function hasLegacySavedControl(n,i,c){
  if(!c)return false;
@@ -288,7 +274,7 @@ function bindInputs(n,c){const crit=$('criterion'),desc=$('criterionDesc');crit.
 }
 function setEditable(v){const n=nests.find(x=>x.id===currentNestId);const c=n?.controls?.[currentControl];const saved=!!c&& (c.saved===true||hasLegacySavedControl(n,currentControl,c));editing=saved?!(!v):true; if(saved && !v) editing=false; if(!saved) editing=true; const canEdit=editing;['birdInput','criterion','obsPickerBtn','treeInput','count','chicks','notes'].forEach(id=>{const e=$(id);if(e)e.disabled=!canEdit});const d=$('date'),t=$('time');if(d)d.readOnly=true;if(t)t.readOnly=true;const saveBtn=$('saveControl');if(saveBtn)saveBtn.hidden=!canEdit;const eb=$('editNestBtn');if(eb){eb.hidden=canEdit||!saved;eb.textContent='✏️ Edytuj'}}
 function saveCurrent(){const n=nests.find(x=>x.id===currentNestId);if(!n)return;const c=n.controls[currentControl]||blankControl();if(currentControl===0&&!n.bird){const q=$('birdInput')?.value.trim().toLocaleLowerCase('pl-PL'),b=BIRDS.find(x=>x.name.toLocaleLowerCase('pl-PL')===q||x.code.toLocaleLowerCase('pl-PL')===q);if(!b)return alert('Wybierz gatunek z listy.');n.bird=b.name;n.birdCode=b.code;n.number=n.number||nextNumber(b.code);n.label=`${b.code}-${n.number}`}
-c.count=$('count').value;c.chicks=$('chicks').value;c.criterion=$('criterion').value;c.observations=[...document.querySelectorAll('[data-obs]:checked')].map(x=>OBS[+x.dataset.obs]);c.tree=$('treeInput').value.trim();const t=TREES.find(x=>x.name.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL')||x.code.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL'));c.treeCode=t?t.code:($('treeInput').dataset.code||'');const x=now();if(!c.saved){c.date=x.date;c.time=x.time}c.notes=$('notes').value;c.saved=true;n.controls[currentControl]=c;n.draft=false;n.seasons=n.seasons||{};const year=c.date.slice(0,4);n.seasons[year]=n.seasons[year]||[];n.seasons[year][currentControl]=JSON.parse(JSON.stringify(c));save();$('nestCode').textContent=n.label;editing=false;closeNest()}
+c.count=$('count').value;c.chicks=$('chicks').value;c.criterion=$('criterion').value;c.observations=[...document.querySelectorAll('[data-obs]:checked')].map(x=>OBS[+x.dataset.obs]);c.tree=$('treeInput').value.trim();const t=TREES.find(x=>x.name.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL')||x.code.toLocaleLowerCase('pl-PL')===c.tree.toLocaleLowerCase('pl-PL'));c.treeCode=t?t.code:($('treeInput').dataset.code||'');const x=now();if(!c.saved){c.date=x.date;c.time=x.time}c.notes=$('notes').value;c.saved=true;n.controls[currentControl]=c;n.draft=false;n.seasons=n.seasons||{};const year=c.date.slice(0,4);n.seasons[year]=n.seasons[year]||[];n.seasons[year][currentControl]=JSON.parse(JSON.stringify(c));save();$('nestCode').textContent=n.label;editing=false;renderMarkers();closeNest()}
 function openNest(id){const n=nests.find(x=>x.id===id);if(!n)return;currentNestId=id;currentControl=0;editing=!!n.draft;$('nestCard').hidden=false;$('nestCode').textContent=n.label||'nie nadano';$('birdFixed').innerHTML=n.bird?`<strong>Gatunek: ${esc(n.bird)} (${esc(n.birdCode)})</strong>`:'Gatunek: jeszcze nie wybrano';$('nestVisibilityBtn').textContent='Ukryj gniazdo';$('nestVisibilityBtn').onclick=()=>{n.hidden=true;save();renderMarkers();closeNest()};$('editNestBtn').onclick=()=>{editing=true;renderControl()};$('deleteNestBtn').onclick=()=>{if(confirm('Usunąć to gniazdo wraz ze wszystkimi kontrolami?')){nests=nests.filter(x=>x.id!==id);save();closeNest()}};$('historyBtn').onclick=()=>renderHistory(n);renderTabs();renderControl();requestAnimationFrame(()=>{const card=$('nestCard');card.scrollIntoView({behavior:'smooth',block:'start'});const title=$('nestTitle');if(title)title.focus({preventScroll:true})})}
 function renderHistory(n){const p=$('historyPanel');p.hidden=!p.hidden;if(p.hidden)return;const seasons=n.seasons||{};const years=Object.keys(seasons).sort((a,b)=>b.localeCompare(a));const val=v=>esc(v==null||v===''?'—':v);const obs=v=>(v||[]).length?esc(v.join(', ')):'—';const controls=arr=>[0,1,2,3].map(i=>{const c=arr[i]||blankControl();const crit=CRITERIA.find(x=>x.code===c.criterion);return `<div class="historyControl"><h4>Kontrola ${i+1}</h4><div><b>Data:</b> ${val(c.date)} &nbsp; <b>Czas:</b> ${val(c.time)}</div><div><b>Liczebność:</b> ${val(c.count)}</div><div><b>Liczba piskląt:</b> ${val(c.chicks)}</div><div><b>Kryterium lęgowości:</b> ${val(c.criterion)}</div><div class="historyDesc"><b>Opis kryterium:</b> ${val(crit&&crit.desc)}</div><div><b>Obserwacje:</b> ${obs(c.observations)}</div><div><b>Drzewo:</b> ${val(c.tree)}</div><div><b>Kod drzewa:</b> ${val(c.treeCode)}</div><div><b>Uwagi:</b> ${val(c.notes)}</div></div>`}).join('');p.innerHTML=years.length?`<h3>Historia gniazda ${esc(n.label)}</h3>`+years.map(y=>`<div class="historyYear"><button type="button" data-year="${y}">${y} ▸</button><div class="historyBody" data-body="${y}" hidden>${controls(seasons[y]||[])}</div></div>`).join(''):'<div class="muted">Brak zapisanej historii.</div>';p.querySelectorAll('[data-year]').forEach(b=>b.onclick=()=>{const body=p.querySelector(`[data-body="${b.dataset.year}"]`);body.hidden=!body.hidden;b.textContent=body.hidden?`${b.dataset.year} ▸`:`${b.dataset.year} ▾`})}
 function renderTabs(){document.querySelectorAll('.tab').forEach((b,i)=>{b.classList.toggle('active',i===currentControl);b.onclick=()=>{currentControl=i;const n=nests.find(x=>x.id===currentNestId);const c=n?.controls?.[i]||blankControl();editing=!!n?.draft || !c.saved;renderTabs();renderControl()}})}
