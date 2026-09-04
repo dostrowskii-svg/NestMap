@@ -25,8 +25,9 @@
 </section>
 
 <section class="card" id="nestCard" hidden>
-  <div class="sectionHead"><h2 id="nestTitle" tabindex="-1">KOD</h2><span id="nestCode" class="codeBadge"></span></div><div class="formActions nestActions"><button id="nestVisibilityBtn" class="secondary">Ukryj gniazdo</button><button id="historyBtn" class="secondary">Historia</button><button id="editNestBtn" class="secondary">✏️ Edytuj</button><button id="cancelNest" class="secondary">Anuluj</button><button id="deleteNestBtn" class="danger">Usuń</button></div>
+  <div class="sectionHead"><h2 id="nestTitle" tabindex="-1">KOD</h2></div><div class="formActions nestActions"><button id="nestVisibilityBtn" class="secondary">Ukryj gniazdo</button><button id="historyBtn" class="secondary">Historia</button><button id="editNestBtn" class="secondary">✏️ Edytuj</button><button id="cancelNest" class="secondary">Anuluj</button><button id="deleteNestBtn" class="danger">Usuń</button></div>
   <div id="historyPanel" class="historyPanel" hidden></div>
+  <div class="codeRow"><strong>KOD:</strong> <span id="nestCode" class="codeBadge"></span></div>
   <div class="birdFixed" id="birdFixed"></div>
   <div class="controlNumberLabel">Numer kontroli</div>
   <div class="tabs compactTabs"><button class="tab active" data-tab="0" aria-label="Kontrola 1">1</button><button class="tab" data-tab="1" aria-label="Kontrola 2">2</button><button class="tab" data-tab="2" aria-label="Kontrola 3">3</button><button class="tab" data-tab="3" aria-label="Kontrola 4">4</button></div>
@@ -37,7 +38,7 @@
 <div id="menuPanel" class="menuPanel" hidden>
  <div class="menuBox">
   <div class="menuHead"><h2>Menu NestMap</h2><button id="closeMenu" class="secondary">×</button></div>
-  <div class="menuQuickRow"><button id="offlineBtn" class="menuItem">💾 Przygotuj mapę offline</button><button id="exportCurrentArea" class="menuItem">📐 Eksportuj widoczny fragment</button></div><button id="bdlLabelsBtn" class="menuItem">🏷️ Napisy BDL ✓</button>
+  <div class="menuQuickRow"><button id="offlineBtn" class="menuItem">💾 Przygotuj mapę offline</button><button id="exportCurrentArea" class="menuItem">📐 Eksportuj widoczny fragment</button></div>
   <div class="visibilityRow two"><button id="toggleNestsBtn" class="menuItem visibilityBtn">👁️ Ukryj gniazda</button><button id="revealNestsBtn" class="menuItem visibilityBtn">👁️ Odkryj gniazda</button></div>
   <button id="deleteVisibleBtn" class="menuItem dangerMenuItem">🗑️ Usuń gniazda z widocznego fragmentu mapy</button>
   <div class="menuSection"><h3>Filtruj gniazda</h3>

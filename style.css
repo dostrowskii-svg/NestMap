@@ -75,3 +75,13 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 
 /* v8.21.19: map controls back to the previous compact size. */
 @media(max-width:600px){.mapFixedControls{right:7px;top:7px;gap:5px}.mapFixedControls .mapCtl{font-size:12px;padding:7px 8px}}
+
+.codeRow{margin:8px 0 4px;font-size:18px}.codeRow .codeBadge{font-weight:700}
+
+
+/* NestMap v8.21.26: BDL panel must scroll naturally on iPhone/Safari.
+   Leaflet otherwise interprets the finger gesture as map panning. */
+.bdlInfoPanel{touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;max-height:calc(100% - 16px);overflow-y:auto;overflow-x:hidden;pointer-events:auto;}
+.bdlInfoPanel .bdlSectionBody{touch-action:pan-y;}
+.bdlInfoPanel .bdlRows{touch-action:pan-y;}
+@media(max-width:600px){.bdlInfoPanel{max-height:calc(100% - 12px);padding-bottom:18px;}}

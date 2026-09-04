@@ -3,7 +3,7 @@ const STORAGE='nestmap-nests-v5';
 const OBS=['para','zaniepokojone dorosłe','dorosły noszący materiał gniazdowy','ptak latający w pobliżu gniazda','krążący ptak','ptak zlatujący z gniazda','dorosłe ze skorupkami jaj','dorosły z pokarmem','inkubacja','pisklęta w gnieździe','świeże gałązki','napuszone gniazdo','puch na gnieździe','pióra na gnieździe','pióra pod drzewem','odchody','skorupki jaj','wypluwki','ofiary w okolicy gniazda','brak śladów użytkowania','nocujące ptaki na lub przy gnieździe'];
 let nests=JSON.parse(localStorage.getItem(STORAGE)||'[]').filter(n=>!n?.draft);
 save();
-let map,nestMarkerLayer=null,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlForestWms=null,bdlWmtsLayer=null,bdlLabelWms=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
+let map,nestMarkerLayer=null,currentNestId=null,currentControl=0,markersVisible=true,speciesQuery='',selectedSpeciesCodes=new Set(),filterVisibility='all',filterYear='',editing=false,watchId=null,userPos=null,bdlEnabled=false,bdlLayer=null,bdlForestWms=null,bdlWmtsLayer=null,bdlBoundaryLayer=null,bdlCompartmentBoundaryLayer=null,bdlSubareaBoundaryLayer=null,bdlBusy=false,bdlRequestSeq=0,bdlInfoPanel=null,bdlVectorLayer=null,bdlLabelLayer=null,bdlLabelsVisible=true,bdlVectorBusy=false,bdlVectorSeq=0,baseMapMode='imagery';
 const blankControl=()=>({criterion:'',observations:[],count:'',chicks:'',tree:'',treeCode:'',date:'',time:'',notes:'',});
 const now=()=>{const d=new Date();return {date:d.toLocaleDateString('en-CA'),time:d.toTimeString().slice(0,5)}};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -20,28 +20,38 @@ function initMap(){
  const imagery=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,maxNativeZoom:19,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'Tiles © Esri'}).addTo(map); window.__nmImagery=imagery;
  const streets=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,attribution:'© OpenStreetMap'}); window.__nmStreets=streets;
  const bdlWms='https://mapserver.bdl.lasy.gov.pl/arcgis/services/WMS_BDL_mapa_drzewostanow/MapServer/WMSServer';
+ // IMPORTANT: use BDL's official WMTS mobile forest-stand map. It is the same
+ // pre-rendered thematic map used for the mBDL-style display, including the
+ // coloured stand polygons, compartment labels and subarea labels at their
+ // intended scales. The previous WMS overlay rendered only outlines in Safari.
  const bdlWmts='https://mapserver.bdl.lasy.gov.pl/arcgis/rest/services/WMTS_BDL_mapa_drzewostanow/MapServer/tile/{z}/{y}/{x}';
- // The coloured BDL cartography stays on its own layer. Labels are a separate
- // WMS overlay, so turning labels off never removes the coloured map.
  bdlWmtsLayer=L.tileLayer(bdlWmts,{minZoom:6,maxZoom:19,minNativeZoom:6,maxNativeZoom:17,tileSize:256,opacity:1,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'BDL · Lasy Państwowe'}).setZIndex(405);
- bdlLabelWms=L.tileLayer.wms(bdlWms,{layers:'3,5',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,tileSize:256,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(406);
+ // Keep legacy WMS objects only for compatibility; they are NOT added to the map.
+ bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(405);
+ bdlCompartmentBoundaryLayer=null;
+ bdlSubareaBoundaryLayer=null;
+ // Keep a group variable for compatibility with the rest of the app.
  bdlLayer=L.layerGroup([bdlWmtsLayer]).setZIndex(200);
- bdlBoundaryLayer=null;
- map.on('load moveend zoomend',()=>{setTimeout(()=>map.invalidateSize(false),50);if(bdlEnabled){setBDLBoundaryLayer();}});
+ bdlBoundaryLayer=bdlCompartmentBoundaryLayer;
+ const cross=document.createElement('div');cross.className='crosshair';cross.textContent='＋';$('map').appendChild(cross);
+ map.on('load moveend zoomend',()=>{setTimeout(()=>map.invalidateSize(false),50);if(bdlEnabled){setBDLBoundaryLayer();refreshBDLVectorOverlay();}});
  map.on('click',e=>{if(bdlEnabled)showBDLAtPoint(e.latlng)});
  setTimeout(()=>map.invalidateSize(true),300);
  if(navigator.geolocation&&!nests.length) navigator.geolocation.getCurrentPosition(p=>map.setView([p.coords.latitude,p.coords.longitude],15),()=>{},{enableHighAccuracy:true,timeout:8000,maximumAge:60000});
  renderMarkers();
 }
 function locatePhone(){if(!window.isSecureContext||!navigator.geolocation)return alert('Lokalizacja jest niedostępna. Otwórz NestMap przez https://dostrowskii-svg.github.io/NestMap/.');$('mapStatus').textContent='Pobieram dokładną lokalizację telefonu…';let done=false;const apply=p=>{if(done)return;done=true;userPos=[p.coords.latitude,p.coords.longitude];map.setView(userPos,17,{animate:true});$('mapStatus').textContent='Mapa ustawiona na lokalizacji telefonu.';renderMarkers()};const fail=e=>{if(done)return;let msg='Nie udało się pobrać lokalizacji telefonu.';if(e&&e.code===1)msg='Safari nie udostępniło lokalizacji. Sprawdź: Ustawienia → Prywatność i ochrona → Usługi lokalizacji → Witryny Safari → „Gdy używam aplikacji”.';else if(e&&e.code===2)msg='Telefon nie może teraz ustalić pozycji. Wyjdź na otwartą przestrzeń i spróbuj ponownie.';else if(e&&e.code===3)msg='Pobieranie lokalizacji trwało zbyt długo. Spróbuj ponownie.';$('mapStatus').textContent=msg;alert(msg)};navigator.geolocation.getCurrentPosition(apply,fail,{enableHighAccuracy:true,timeout:20000,maximumAge:0})}
-function updateBDLLabelToggle(){
- const b=$('bdlLabelsBtn');
- if(b){b.textContent=bdlLabelsVisible?'🏷️ Napisy BDL ✓':'🏷️ Napisy BDL';b.classList.toggle('active',bdlLabelsVisible)}
- if(bdlEnabled) refreshBDLVectorOverlay();
-}
 function closeBDLInfo(){if(bdlInfoPanel){bdlInfoPanel.remove();bdlInfoPanel=null}$('mapStatus').textContent=bdlEnabled?'Drzewostany BDL są dostępne online. Kliknij wydzielenie, aby zobaczyć opis.':'Przesuń mapę tak, aby krzyżyk wskazywał miejsce gniazda.'}
-function ensureBDLInfoPanel(){if(bdlInfoPanel)return bdlInfoPanel;const el=document.createElement('div');el.id='bdlInfoPanel';el.className='bdlInfoPanel';el.hidden=true;$('map').appendChild(el);bdlInfoPanel=el;return el}
-function toggleBDLLabels(){bdlLabelsVisible=!bdlLabelsVisible;updateBDLLabelToggle();if(bdlEnabled)setBDLBoundaryLayer()}
+function ensureBDLInfoPanel(){
+ if(bdlInfoPanel)return bdlInfoPanel;
+ const el=document.createElement('div');
+ el.id='bdlInfoPanel';el.className='bdlInfoPanel';el.hidden=true;
+ $('map').appendChild(el);bdlInfoPanel=el;
+ // On iPhone/Safari Leaflet can treat a vertical finger gesture inside the
+ // panel as map panning. Stop only the map gesture; the panel keeps scrolling.
+ ['touchstart','touchmove','touchend','touchcancel','wheel'].forEach(type=>el.addEventListener(type,e=>e.stopPropagation(),{passive:type!=='wheel'}));
+ return el;
+}
 function toggleBDL(){
  if(!bdlLayer)return;
  bdlEnabled=!bdlEnabled;
@@ -53,10 +63,10 @@ function toggleBDL(){
    setBDLBoundaryLayer();
    if(btn){btn.classList.add('active');btn.textContent='🌲 Drzewostany BDL ✓'}
    $('mapStatus').textContent='Drzewostany BDL są dostępne online. Kliknij wydzielenie, aby zobaczyć opis.';
-   ensureBDLInfoPanel();
+   ensureBDLInfoPanel();refreshBDLVectorOverlay();
  }else{
    if(bdlWmtsLayer&&map.hasLayer(bdlWmtsLayer))map.removeLayer(bdlWmtsLayer);
-   if(bdlLabelWms&&map.hasLayer(bdlLabelWms))map.removeLayer(bdlLabelWms);
+   if(bdlForestWms&&map.hasLayer(bdlForestWms))map.removeLayer(bdlForestWms);
    if(bdlLayer&&map.hasLayer(bdlLayer))map.removeLayer(bdlLayer);
    if(bdlCompartmentBoundaryLayer&&map.hasLayer(bdlCompartmentBoundaryLayer))map.removeLayer(bdlCompartmentBoundaryLayer);if(bdlSubareaBoundaryLayer&&map.hasLayer(bdlSubareaBoundaryLayer))map.removeLayer(bdlSubareaBoundaryLayer);
    closeBDLInfo();
@@ -87,96 +97,87 @@ function bdlQueryUrl(layerId, params){
 }
 function setBDLBoundaryLayer(){
  if(!bdlEnabled||!map)return;
- // Keep the official coloured WMTS visible at all times. The BDL WMS label
- // layers (3 = compartments, 5 = subareas) are independent and obey their
- // own official scale ranges.
- if(bdlWmtsLayer&&!map.hasLayer(bdlWmtsLayer))bdlWmtsLayer.addTo(map);
- if(bdlLabelWms){
-   if(bdlLabelsVisible){if(!map.hasLayer(bdlLabelWms))bdlLabelWms.addTo(map);}
-   else if(map.hasLayer(bdlLabelWms))map.removeLayer(bdlLabelWms);
+ // BDL labels are intentionally permanent: the user asked to remove the
+ // "Napisy BDL" switch. Keep the official BDL layers 3 (oddziały), 5
+ // (wydzielenia) and 11 (coloured drzewostany) together.
+ if(bdlForestWms){
+   bdlForestWms.setParams({layers:'3,5,11'},false);
+   if(!map.hasLayer(bdlForestWms))bdlForestWms.addTo(map);
  }
+ if(bdlWmtsLayer&&map.hasLayer(bdlWmtsLayer))map.removeLayer(bdlWmtsLayer);
+ if(bdlLabelLayer&&map.hasLayer(bdlLabelLayer))map.removeLayer(bdlLabelLayer);
 }
 
 async function refreshBDLVectorOverlay(){
- if(!bdlEnabled||!map||map.getZoom()<6){
-   if(bdlVectorLayer){map.removeLayer(bdlVectorLayer);bdlVectorLayer=null}
-   if(bdlLabelLayer){map.removeLayer(bdlLabelLayer);bdlLabelLayer=null}
-   return;
- }
- const seq=++bdlVectorSeq;
- try{
-  const z=map.getZoom(), b=map.getBounds();
-  const q=async(layerId,fields,extra={})=>{
-   const params=new URLSearchParams({where:'1=1',geometry:`${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`,geometryType:'esriGeometryEnvelope',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:fields,returnGeometry:'true',outSR:'4326',f:'geojson',resultRecordCount:'2000',...extra});
-   const r=await fetch(bdlQueryUrl(layerId,params),{cache:'no-store'}); if(!r.ok)throw new Error('BDL '+r.status); const j=await r.json(); return j.features||[];
-  };
-  const comps=await q(3,'adress_forest,compartment_cd,a_year');
-  if(seq!==bdlVectorSeq)return;
-  const subs=z>=13?await q(5,'adress_forest,subarea_id,site_type_cd,species_cd_d,part_cd,species_age,a_year'):[];
-  if(seq!==bdlVectorSeq)return;
-  if(bdlVectorLayer)map.removeLayer(bdlVectorLayer);
-  if(bdlLabelLayer)map.removeLayer(bdlLabelLayer);
-  const boundary=L.layerGroup(), labels=L.layerGroup();
-  comps.forEach(f=>{
-   const p=bdlFeatureAttributes(f);
-   const gj=L.geoJSON(f,{style:{color:'#555',weight:1,opacity:.85,fill:false},interactive:true});
-   gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); boundary.addLayer(gj);
-  });
-  subs.forEach(f=>{
-   const p=bdlFeatureAttributes(f);
-   const gj=L.geoJSON(f,{style:{color:'#444',weight:1,opacity:.9,fill:false},interactive:true});
-   gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); boundary.addLayer(gj);
-  });
-  bdlVectorLayer=boundary; bdlLabelLayer=labels;
-  bdlVectorLayer.addTo(map);
-  if(bdlLabelsVisible) bdlLabelLayer.addTo(map);
- }catch(e){console.warn('BDL overlay',e)}
+ // Labels and boundaries are rendered by the official BDL WMS layers.
+ // Keeping a second client-side vector copy caused missing/duplicate labels
+ // in Safari and was unnecessary for map display.
+ if(bdlVectorLayer&&map&&map.hasLayer(bdlVectorLayer))map.removeLayer(bdlVectorLayer);
+ if(bdlLabelLayer&&map&&map.hasLayer(bdlLabelLayer))map.removeLayer(bdlLabelLayer);
+ bdlVectorLayer=null; bdlLabelLayer=null;
 }
 
 function bdlFeatureAttributes(f){return f?.attributes||f?.properties||{}}
 function showBDLFeature(f,latlng){showBDLAtPoint(latlng)}
 function parseBDLSpeciesDescription(raw){
- const text=String(raw??'').trim();
+ const text=String(raw??'').replace(/<br\s*\/?>(?=)/gi,'\n').replace(/<[^>]*>/g,' ').replace(/\r/g,'').trim();
  if(!text)return [];
+ const clean=v=>String(v??'').replace(/\s+/g,' ').trim();
  const rows=[];
- const isLayer=v=>/^(DRZEW|PODSZ|PODS|NAL|PRZESTR|PRZESTRZENNA)$/i.test(String(v??'').trim());
- const addRow=(r)=>{
-   if(!Array.isArray(r)||!r.length)return;
-   const a=r.map(v=>String(v??'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim());
-   const li=a.findIndex(isLayer);
-   if(li>=0){
-     const layer=a[li], speciesCode=a[li+1]||'';
-     if(speciesCode)rows.push({layer,speciesCode,part:a[li+2]||'',age:a[li+3]||'',d13:a[li+4]||'',h:a[li+5]||'',bon:a[li+6]||'',zas:a[li+7]||'',extra:a.slice(li+8).filter(Boolean).join(' · ')});
-   }
+ const add=(layer,species,part='',age='',d13='',h='',bon='',zas='',extra='')=>{
+   species=clean(species); if(!species)return;
+   rows.push({layer:clean(layer).toUpperCase(),speciesCode:species,part:clean(part),age:clean(age),d13:clean(d13),h:clean(h),bon:clean(bon),zas:clean(zas),extra:clean(extra)});
  };
- // mBDL may return JSON arrays/objects in different deployments.
- try{
-   const parsed=JSON.parse(text);
-   const walk=v=>{
-     if(Array.isArray(v)){ if(v.some(x=>isLayer(x))) addRow(v); else v.forEach(walk); }
-     else if(v&&typeof v==='object'){
-       if(v.layer||v.storey_cd||v.species_cd||v.speciesCode) rows.push({layer:v.layer||v.storey_cd||'',speciesCode:v.speciesCode||v.species_cd||'',part:v.part||v.part_cd||'',age:v.age||v.species_age||'',d13:v.d13||'',h:v.h||'',bon:v.bon||'',zas:v.zas||'',extra:v.extra||''});
-       Object.values(v).forEach(x=>{if(typeof x==='object')walk(x)});
-     }
-   };
-   walk(parsed);
- }catch{}
- if(rows.length)return rows;
- // Plain mBDL text: records are commonly separated by line breaks/semicolons.
- let vals=text.replace(/<br\s*\/?>/gi,';').replace(/\r/g,'').split(/[;\n]+/).map(v=>v.trim());
- // If the backend emits one long flat record, retain empty slots and use 10-field chunks.
- if(vals.length>=4){
-   for(let i=0;i+3<vals.length;i+=10){
-     const r=vals.slice(i,i+10), li=r.findIndex(isLayer);
-     if(li>=0) addRow(r);
-   }
+ const field=(seg,names,nextNames)=>{
+   const n=names.join('|'), next=nextNames.join('|');
+   const lookahead=next?`(?=\\s+(?:${next})\\s*[:=]|$)`:'$';
+   const re=new RegExp(`(?:${n})\\s*[:=]\\s*(.*?)${lookahead}`,'i');
+   const m=seg.match(re); return m?clean(m[1]):'';
+ };
+ // 1) Human-readable BDL form, one species per line/semicolon.
+ const lines=text.replace(/;/g,'\n').split(/\n+/).map(clean).filter(Boolean);
+ for(const line of lines){
+   if(!/\bWarstwa\s*[:=]/i.test(line) || !/\bGatunek\s*[:=]/i.test(line))continue;
+   const layer=field(line,['Warstwa'],['Gatunek','Udział','Udz','Wiek','D13','H','Bonitacja','Zasobność']);
+   const species=field(line,['Gatunek','Kod gatunku'],['Udział','Udz','Wiek','D13','H','Bonitacja','Zasobność']);
+   if(species)add(layer,species,field(line,['Udział','Udz'],['Wiek','D13','H','Bonitacja','Zasobność']),field(line,['Wiek'],['D13','H','Bonitacja','Zasobność']),field(line,['D13','Pierśnica'],['H','Bonitacja','Zasobność']),field(line,['H','Wysokość'],['Bonitacja','Zasobność']),field(line,['Bonitacja','Bon'],['Zasobność']),field(line,['Zasobność','Zapas'],[]));
  }
  if(rows.length)return rows;
- // Fallback: find every occurrence of a layer marker and take following fields.
- const tokens=text.replace(/<br\s*\/?>/gi,';').split(/[;,|\n\t]+/).map(v=>v.trim()).filter(Boolean);
- for(let i=0;i<tokens.length;i++)if(isLayer(tokens[i]))addRow(tokens.slice(i,i+10));
+
+ // 2) Compact mBDL form. The real service returns the complete composition
+ // in storey_species_desc. A layer is followed by several species records;
+ // each record may omit fields, so we delimit records by known forestry
+ // species codes instead of assuming every record has 6 values.
+ const codes=(typeof TREES!=='undefined'?TREES.map(x=>x.code):[]).concat([
+   'SO','DB','DB.B','DB.C','MD','DG','ŚW','GB','BRZ','OL','JS','AK','OS','TP','JD','BK','WZ','KL','JR','KP','LP','KS','TB','SO.C','SO. C','DB.C','DB.B','DB.CZ','OLSZ','LIP','JAW','LESZ','LSZ','JB','OS','WB','WB.','IWA','OL.S','BRZ','ŚW','SO','DB','MD','DG'
+ ]);
+ const unique=[...new Set(codes.map(x=>String(x).trim().toUpperCase()).filter(Boolean))].sort((a,b)=>b.length-a.length);
+ const codeRe=new RegExp(`(?<![A-ZĄĆĘŁŃÓŚŹŻ])(${unique.map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')})(?![A-ZĄĆĘŁŃÓŚŹŻ])`,'gi');
+ const layerRe=/\b(DRZEW|PODSZ|PODS|NAL|PRZESTR|PRZESTRZENNA)\b/gi;
+ const layerHits=[...text.matchAll(layerRe)];
+ const chunks=layerHits.length?layerHits.map((h,i)=>({layer:h[1],text:text.slice(h.index+h[0].length,layerHits[i+1]?.index??text.length)})):[{layer:'',text:text}];
+ for(const ch of chunks){
+   let seg=clean(ch.text).replace(/^[\s:;,|\-]+/,'');
+   if(!seg)continue;
+   // If this chunk contains explicit labels, use the labelled parser above.
+   if(/\bGatunek\s*[:=]/i.test(seg)){
+     const species=field(seg,['Gatunek','Kod gatunku'],['Udział','Udz','Wiek','D13','H','Bonitacja','Zasobność']);
+     if(species)add(ch.layer,species,field(seg,['Udział','Udz'],['Wiek','D13','H','Bonitacja','Zasobność']),field(seg,['Wiek'],['D13','H','Bonitacja','Zasobność']),field(seg,['D13','Pierśnica'],['H','Bonitacja','Zasobność']),field(seg,['H','Wysokość'],['Bonitacja','Zasobność']),field(seg,['Bonitacja','Bon'],['Zasobność']),field(seg,['Zasobność','Zapas'],[]));
+     continue;
+   }
+   const hits=[...seg.matchAll(codeRe)];
+   if(!hits.length)continue;
+   for(let i=0;i<hits.length;i++){
+     const code=hits[i][1];
+     const tail=seg.slice(hits[i].index+hits[i][0].length,hits[i+1]?.index??seg.length);
+     const vals=clean(tail).replace(/^[\s:;,|()\[\]\-]+|[\s:;,|()\[\]\-]+$/g,'').split(/[\s,;|:/()\[\]]+/).filter(Boolean);
+     // Standard BDL order: udział, wiek, D13, H, bonitacja, zasobność.
+     add(ch.layer,code,vals[0]||'',vals[1]||'',vals[2]||'',vals[3]||'',vals[4]||'',vals[5]||'');
+   }
+ }
  return rows;
 }
+
 function bdlPopupHtml(g,species){
  const a=g||{}, val=bdlVal, row=(label,v)=>`<div class="bdlRow"><span>${esc(label)}</span><b>${esc(val(v))}</b></div>`;
  const general=[row('Adres leśny',a.adress_forest),row('Forma własności',a.owner_cat_name),row('RDLP',a.region_name),row('Nadleśnictwo',a.inspectorate_name),row('Obręb',a.forest_dist_name),row('Leśnictwo',a.forest_range_name),row('Województwo',a.county_name),row('Powiat',a.district_name),row('Gmina',a.municipality_name),row('Obręb ewidencyjny',a.community_name),row('Oddział i wydzielenie',[a.compartment_cd,a.subarea_cd].filter(Boolean).join('')),row('Stan na rok',a.a_year)].join('');
@@ -184,22 +185,16 @@ function bdlPopupHtml(g,species){
  let speciesHtml='';
  const renderLayerSpecies=(items)=>items.map(x=>{
    const p=bdlFeatureAttributes(x);
-   const lit=String(p.lit||'').replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
-   const details=[];
-   const add=(label,regex)=>{const m=lit.match(regex);if(m&&m[1]!=null&&String(m[1]).trim()!=='')details.push([label,String(m[1]).trim()])};
-   add('D13',/(?:D13|pierśnica)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)/i);
-   add('H',/(?:^|\s)(?:H|wysokość)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)/i);
-   add('Bonitacja',/bonitacja\s*[:=]?\s*([IVX]+(?:[+-])?)/i);
-   add('Zasobność',/(?:zasobność|zapas)\s*[:=]?\s*([0-9]+(?:[.,][0-9]+)?)/i);
-   add('Wskaźnik',/(?:wskaźnik|mas[ay])\s*[:=]?\s*([^;|]+)/i);
-   if(!details.length && lit)details.push(['Pozostałe dane BDL',lit]);
-   return `<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',p.storey_cd)}${row('Gatunek',p.species_cd)}${row('Udział',p.part_cd)}${row('Wiek',p.species_age)}${details.map(([k,v])=>row(k,v)).join('')}</div></div>`;
+   return `<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',p.storey_cd)}${row('Gatunek',p.species_cd)}${row('Udział',p.part_cd)}${row('Wiek',p.species_age)}${row('D13',p.d13)}${row('H',p.h)}${row('Bonitacja',p.bon)}${row('Zasobność',p.zas)}${p.lit?row('Pozostałe dane BDL',p.lit):''}</div></div>`;
  }).join('');
- if(species?.length)speciesHtml=renderLayerSpecies(species);
- else if(a.storey_species_desc) {
+ // The mBDL service stores the complete species composition in
+ // storey_species_desc. It must be the primary source here; querying the
+ // coloured map layer returns only the mapped/dominant stand representation.
+ if(a.storey_species_desc){
    const parsed=parseBDLSpeciesDescription(a.storey_species_desc);
-   if(parsed.length){speciesHtml=parsed.map(x=>`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',x.layer)}${row('Gatunek',x.speciesCode)}${row('Udział',x.part)}${row('Wiek',x.age)}${row('D13',x.d13)}${row('H',x.h)}${row('Bonitacja',x.bon)}${row('Zasobność',x.zas)}${x.extra?row('Pozostałe dane BDL',x.extra):''}</div></div>`).join('');}
+   if(parsed.length)speciesHtml=parsed.map(x=>`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',x.layer)}${row('Gatunek',x.speciesCode)}${row('Udział',x.part)}${row('Wiek',x.age)}${row('D13',x.d13)}${row('H',x.h)}${row('Bonitacja',x.bon)}${row('Zasobność',x.zas)}${x.extra?row('Pozostałe dane BDL',x.extra):''}</div></div>`).join('');
  }
+ if(!speciesHtml&&species?.length)speciesHtml=renderLayerSpecies(species);
  if(!speciesHtml){const raw=String(a.storey_species_desc||'').trim();speciesHtml=raw?`<div class="bdlRawSpecies">${esc(raw).replace(/;/g,';<br>')}</div>`:'<div class="muted">Brak szczegółowych danych o gatunkach.</div>';}
  const section=(title,id,body,open)=>`<button type="button" class="bdlSectionTitle bdlSectionToggle" data-bdl-section="${id}" aria-expanded="${open?'true':'false'}">${title}<span class="bdlChevron">${open?'▾':'▸'}</span></button><div id="${id}" class="bdlSectionBody" ${open?'':'hidden'}>${body}</div>`;
  return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div>${section('ADRES','bdlAdresBody',`<div class="bdlRows">${general}</div>`,true)}${section('DANE OGÓLNE','bdlDaneBody',`<div class="bdlRows">${dane}</div>`,false)}${section('GATUNKI','bdlGatunkiBody',speciesHtml,false)}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
@@ -229,40 +224,11 @@ async function showBDLAtPoint(latlng){
   const general=j.features?.[0]?.attributes||null;
   if(!general){$('mapStatus').textContent='W tym miejscu nie znaleziono wydzielenia BDL.';closeBDLInfo();return}
 
-  // The thematic stand layer contains one record per species/storey for the
-  // same stand. Query the point against layer 11 and pass ALL intersecting
-  // records to the popup. This avoids the old single-dominant-species result.
-  let species=[];
-  try{
-    // Layer 11 contains separate records for the species/storeys belonging to
-    // a stand. Query by the exact forest address returned by the clicked
-    // subarea instead of intersecting the point. This reliably returns ALL
-    // species, including secondary layers, rather than only the dominant one.
-    const addr=String(general.adress_forest||'').replace(/'/g,"''");
-    if(addr){
-      const spParams=new URLSearchParams({where:`adress_forest='${addr}'`,outFields:'species_cd,part_cd,species_age,storey_cd,storey_rank_order,lit,gat_grp,grp_age,grp_age_int,adress_forest',returnGeometry:'false',orderByFields:'storey_rank_order ASC,order_key ASC',f:'json'});
-      const sr=await fetch(bdlQueryUrl(11,spParams),{cache:'no-store'});
-      if(sr.ok){
-        const sj=await sr.json();
-        species=(sj.features||[]).map(f=>bdlFeatureAttributes(f))
-          .filter(a=>a.species_cd||a.storey_cd)
-          .sort((a,b)=>(Number(a.storey_rank_order)||999)-(Number(b.storey_rank_order)||999));
-      }
-    }
-    // Fallback for deployments where the address field is indexed differently.
-    if(!species.length){
-      try{
-        const spParams=new URLSearchParams({...common,outFields:'species_cd,part_cd,species_age,storey_cd,storey_rank_order,lit,gat_grp,grp_age,grp_age_int,adress_forest',returnGeometry:'false'});
-        const sr=await fetch(bdlQueryUrl(11,spParams),{cache:'no-store'});
-        if(sr.ok){
-          const sj=await sr.json();
-          species=(sj.features||[]).map(f=>bdlFeatureAttributes(f))
-            .filter(a=>a.species_cd||a.storey_cd)
-            .sort((a,b)=>(Number(a.storey_rank_order)||999)-(Number(b.storey_rank_order)||999));
-        }
-      }catch(e){console.warn('BDL species point fallback',e)}
-    }
-  }catch(e){console.warn('BDL species query',e)}
+  // Do not use the thematic map layer for the species list. Layer 11 is the
+  // coloured cartography and may expose only the dominant mapped species.
+  // The complete composition is carried by storey_species_desc in the mBDL
+  // description layer queried above.
+  const species=[];
 
   if(seq!==bdlRequestSeq)return;
   showBDLInfo(general,species);
@@ -394,5 +360,5 @@ function exportGPX(){
 }
 function downloadBlob(data,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
 function applyAreaExport(){window.__nmExportBounds=map.getBounds();alert('Ustawiono eksport dla obecnie widocznego fragmentu mapy. CSV, KMZ i SHP będą ograniczone do tego obszaru.')}
-$('menuBtn').onclick=()=>{$('menuPanel').hidden=false};$('closeMenu').onclick=()=>{$('menuPanel').hidden=true};$('mapTypeBtn').onclick=()=>{if(bdlEnabled)return;const b=$('mapTypeBtn');if(map.hasLayer(window.__nmImagery)){map.removeLayer(window.__nmImagery);window.__nmStreets.addTo(map);baseMapMode='streets';b.textContent='🗺️ Mapa ulic'}else{map.removeLayer(window.__nmStreets);window.__nmImagery.addTo(map);baseMapMode='imagery';b.textContent='🛰️ Ortofotomapa'}};$('bdlBtn').onclick=toggleBDL;$('bdlLabelsBtn').onclick=toggleBDLLabels;$('locateBtn').onclick=locatePhone;$('offlineBtn').onclick=prepareOfflineMap;$('registerBtn').onclick=registerNest;$('closeNest').onclick=closeNest;$('saveControl').onclick=saveCurrent;$('cancelNest').onclick=cancelCurrentNest;$('exportCsv').onclick=exportCSV;$('exportKmz').onclick=exportKMZ;$('exportShp').onclick=exportSHP;$('exportGpx').onclick=exportGPX;$('exportCurrentArea').onclick=applyAreaExport;$('deleteVisibleBtn').onclick=deleteVisibleNests;$('countSpeciesBtn').onclick=countSpecies;$('toggleNestsBtn').onclick=()=>{markersVisible=false;renderMarkers()};$('revealNestsBtn').onclick=()=>{markersVisible=true;nests.forEach(n=>n.hidden=false);save();renderMarkers();if(currentNestId){const b=$('nestVisibilityBtn');if(b)b.textContent='Ukryj gniazdo'}};$('nestSearch').oninput=e=>{speciesQuery=e.target.value;renderSpeciesFilter();renderMarkers()};$('showAllNests').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};$('clearNestFilter').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};if($('yearFilter'))$('yearFilter').onchange=e=>{filterYear=e.target.value;renderMarkers()};
+$('menuBtn').onclick=()=>{$('menuPanel').hidden=false};$('closeMenu').onclick=()=>{$('menuPanel').hidden=true};$('mapTypeBtn').onclick=()=>{if(bdlEnabled)return;const b=$('mapTypeBtn');if(map.hasLayer(window.__nmImagery)){map.removeLayer(window.__nmImagery);window.__nmStreets.addTo(map);baseMapMode='streets';b.textContent='🗺️ Mapa ulic'}else{map.removeLayer(window.__nmStreets);window.__nmImagery.addTo(map);baseMapMode='imagery';b.textContent='🛰️ Ortofotomapa'}};$('bdlBtn').onclick=toggleBDL;$('locateBtn').onclick=locatePhone;$('offlineBtn').onclick=prepareOfflineMap;$('registerBtn').onclick=registerNest;$('closeNest').onclick=closeNest;$('saveControl').onclick=saveCurrent;$('cancelNest').onclick=cancelCurrentNest;$('exportCsv').onclick=exportCSV;$('exportKmz').onclick=exportKMZ;$('exportShp').onclick=exportSHP;$('exportGpx').onclick=exportGPX;$('exportCurrentArea').onclick=applyAreaExport;$('deleteVisibleBtn').onclick=deleteVisibleNests;$('countSpeciesBtn').onclick=countSpecies;$('toggleNestsBtn').onclick=()=>{markersVisible=false;renderMarkers()};$('revealNestsBtn').onclick=()=>{markersVisible=true;nests.forEach(n=>n.hidden=false);save();renderMarkers();if(currentNestId){const b=$('nestVisibilityBtn');if(b)b.textContent='Ukryj gniazdo'}};$('nestSearch').oninput=e=>{speciesQuery=e.target.value;renderSpeciesFilter();renderMarkers()};$('showAllNests').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};$('clearNestFilter').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};if($('yearFilter'))$('yearFilter').onchange=e=>{filterYear=e.target.value;renderMarkers()};
 initMap();startContinuousLocation();renderYearFilter();renderSpeciesFilter();
