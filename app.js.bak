@@ -278,27 +278,14 @@ function deleteVisibleNests(){const b=map.getBounds();const candidates=nests.fil
 function countSpecies(){const box=$('speciesCountBox');if(!box)return;if(!box.hidden){box.hidden=true;return}const m={};nests.forEach(n=>{const k=n.bird||'bez gatunku';m[k]=(m[k]||0)+1});box.hidden=false;box.innerHTML=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="speciesCountRow"><span>${esc(k)}</span><strong>${v}</strong></div>`).join('')}
 function getFilteredNests(){return nests.filter(n=>nestMatches(n))}
 function csvEscape(v){return '"'+String(v??'').replaceAll('"','""')+'"'}
-async function reverseGeocode(lat,lon){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,{headers:{'Accept-Language':'pl'}});const j=await r.json(),a=j.address||{};return {miejscowosc:a.village||a.town||a.city||a.hamlet||'',gmina:String(a.municipality||a.city_district||'').replace(/^gmina\s+/i,'').trim(),wojewodztwo:String(a.state||'').replace(/^województwo\s+/i,'').trim()}}catch{return {miejscowosc:'',gmina:'',wojewodztwo:''}}}
+async function reverseGeocode(lat,lon){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,{headers:{'Accept-Language':'pl'}});const j=await r.json(),a=j.address||{};return {miejscowosc:a.village||a.town||a.city||a.hamlet||'',gmina:a.municipality||a.city_district||'',wojewodztwo:a.state||''}}catch{return {miejscowosc:'',gmina:'',wojewodztwo:''}}}
 async function fetchBDLExportData(n){
  try{
-  const fields='adress_forest,compartment_cd,subarea_cd,species_cd_d,species_cd,species_age,site_type_cd,storey_species_desc,a_year';
-  const p=new URLSearchParams({where:'1=1',geometry:`${n.lon},${n.lat}`,geometryType:'esriGeometryPoint',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:fields,returnGeometry:'false',f:'json'});
-  const r=await fetch(`${BDL_VECTOR_URL}?${p}`,{cache:'no-store'});if(!r.ok)throw new Error('BDL export HTTP '+r.status);
-  const j=await r.json();const a=j.features?.[0]?.attributes||{};
+  const p=new URLSearchParams({where:'1=1',geometry:`${n.lon},${n.lat}`,geometryType:'esriGeometryPoint',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:'adress_forest,compartment_cd,subarea_cd,species_cd_d,species_cd,species_age,site_type_cd,storey_species_desc,a_year',returnGeometry:'false',f:'json'});
+  const r=await fetch(`${BDL_VECTOR_URL}?${p}`,{cache:'no-store'});if(!r.ok)throw new Error('BDL export HTTP '+r.status);const j=await r.json();const a=j.features?.[0]?.attributes||{};
   const parts=String(a.adress_forest||'').split('-').map(x=>x.trim()).filter(Boolean);
-  const species=a.species_cd_d||a.species_cd||'';
-  const age=a.species_age??'';
-  const tsl=a.site_type_cd||'';
-  return {
-   bdlAddress:a.adress_forest||'',
-   bdlCompartment:a.subarea_cd||parts[parts.length-1]||'',
-   bdlAge:age,
-   bdlSpecies:species,
-   bdlTSL:tsl,
-   bdlSpeciesDesc:a.storey_species_desc||'',
-   bdlYear:a.a_year??''
-  };
- }catch(e){console.warn('BDL export data:',e);return {bdlAddress:'',bdlCompartment:'',bdlAge:'',bdlSpecies:'',bdlTSL:'',bdlSpeciesDesc:'',bdlYear:''}}
+  return {bdlAddress:a.adress_forest||'',bdlCompartment:a.subarea_cd||parts[parts.length-1]||'',bdlAge:a.species_age??'',bdlSpecies:a.species_cd_d||a.species_cd||'',bdlTSL:a.site_type_cd||''};
+ }catch{return {bdlAddress:'',bdlCompartment:'',bdlAge:'',bdlSpecies:'',bdlTSL:''}}
 }
 async function exportCSV(){
  const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));
@@ -313,28 +300,12 @@ async function exportCSV(){
   rows.push(r)
  }
  const csv='\uFEFF'+[h,...rows].map(r=>r.map(csvEscape).join(';')).join('\n');
- shareOrDownload(new Blob([csv],{type:'text/csv;charset=utf-8'}),'NestMap.csv');
+ downloadBlob(csv,'NestMap.csv','text/csv;charset=utf-8')
 }
 function exportGeoJSON(){const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));return {type:'FeatureCollection',features:list.map(n=>({type:'Feature',geometry:{type:'Point',coordinates:[n.lon,n.lat]},properties:{kod:n.label,gatunek:n.bird,kod_gatunku:n.birdCode,rok:nestYears(n).join(',')}}))}}
 function kmzValue(v){return v==null||v===''?'—':String(v)}
 function kmzControlHtml(c,i){const obs=(c.observations||[]).join(', ');return `<h3>Kontrola ${i+1}</h3><table><tr><td>Data</td><td>${esc(kmzValue(c.date))}</td></tr><tr><td>Czas</td><td>${esc(kmzValue(c.time))}</td></tr><tr><td>Kryterium lęgowości</td><td>${esc(kmzValue(c.criterion))}</td></tr><tr><td>Obserwacje</td><td>${esc(kmzValue(obs))}</td></tr><tr><td>Liczebność</td><td>${esc(kmzValue(c.count))}</td></tr><tr><td>Liczba piskląt</td><td>${esc(kmzValue(c.chicks))}</td></tr><tr><td>Drzewo</td><td>${esc(kmzValue(c.tree))}</td></tr><tr><td>Kod drzewa</td><td>${esc(kmzValue(c.treeCode))}</td></tr><tr><td>Uwagi</td><td>${esc(kmzValue(c.notes))}</td></tr></table>`}
-async function exportKMZ(){
- const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));
- if(!list.length)return alert('Brak gniazd spełniających wybrane filtry.');
- $('mapStatus').textContent='Przygotowuję KMZ…';
- const k=[];
- for(const n of list){
-  const b=await fetchBDLExportData(n);
-  const controls=(n.controls||[]).map((c,i)=>kmzControlHtml(c||blankControl(),i)).join('');
-  const bdl=`<h3>BDL</h3><table><tr><td>Adres leśny</td><td>${esc(kmzValue(b.bdlAddress))}</td></tr><tr><td>Oddział i wydzielenie</td><td>${esc(kmzValue(b.bdlCompartment))}</td></tr><tr><td>TSL</td><td>${esc(kmzValue(b.bdlTSL))}</td></tr><tr><td>Wiek drzewostanu</td><td>${esc(kmzValue(b.bdlAge))}</td></tr><tr><td>Gatunek dominujący</td><td>${esc(kmzValue(b.bdlSpecies))}</td></tr></table>`;
-  const desc=`<![CDATA[<div><h2>NestMap — ${esc(n.label||'KOD')}</h2><p><b>KOD:</b> ${esc(kmzValue(n.label))}<br><b>Gatunek:</b> ${esc(kmzValue(n.bird))}<br><b>Kod gatunku:</b> ${esc(kmzValue(n.birdCode))}<br><b>Numer:</b> ${esc(kmzValue(n.number))}<br><b>GPS:</b> ${esc(kmzValue(n.lat))}, ${esc(kmzValue(n.lon))}</p>${bdl}${controls}</div>]]>`;
-  k.push(`<Placemark><name>${esc(n.label||'gniazdo')}</name><description>${desc}</description><Point><coordinates>${Number(n.lon)},${Number(n.lat)},0</coordinates></Point></Placemark>`);
- }
- const kml=`<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>NestMap</name>${k.join('')}</Document></kml>`;
- const zip=zipStore([{name:'doc.kml',data:new TextEncoder().encode(kml)}]);
- $('mapStatus').textContent='';
- await shareOrDownload(new Blob([zip],{type:'application/vnd.google-earth.kmz'}),'NestMap.kmz');
-}
+function exportKMZ(){const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));if(!list.length)return alert('Brak gniazd spełniających wybrane filtry.');const k=list.map(n=>{const controls=(n.controls||[blankControl(),blankControl(),blankControl(),blankControl()]).map((c,i)=>kmzControlHtml(c||blankControl(),i)).join('');const desc=`<![CDATA[<div><h2>NestMap — ${esc(n.label||'KOD')}</h2><p><b>KOD:</b> ${esc(kmzValue(n.label))}<br><b>Gatunek:</b> ${esc(kmzValue(n.bird))}<br><b>Kod gatunku:</b> ${esc(kmzValue(n.birdCode))}<br><b>Numer:</b> ${esc(kmzValue(n.number))}<br><b>GPS:</b> ${esc(kmzValue(n.lat))}, ${esc(kmzValue(n.lon))}</p>${controls}</div>]]>`;return `<Placemark><name>${esc(n.label||'gniazdo')}</name><description>${desc}</description><Point><coordinates>${Number(n.lon)},${Number(n.lat)},0</coordinates></Point></Placemark>`}).join('');const kml=`<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>NestMap</name>${k}</Document></kml>`;const zip=zipStore([{name:'doc.kml',data:new TextEncoder().encode(kml)}]);downloadBlob(zip,'NestMap.kmz','application/vnd.google-earth.kmz')}
 function u16le(v){const a=new Uint8Array(2);new DataView(a.buffer).setUint16(0,v,true);return a}function u32le(v){const a=new Uint8Array(4);new DataView(a.buffer).setUint32(0,v>>>0,true);return a}function f64le(v){const a=new Uint8Array(8);new DataView(a.buffer).setFloat64(0,v,true);return a}function u32be(v){const a=new Uint8Array(4);new DataView(a.buffer).setUint32(0,v>>>0,false);return a}function ascii(s,n){const a=new Uint8Array(n);const b=new TextEncoder().encode(String(s??''));a.set(b.slice(0,n));return a}function concatBytes(...arrs){const n=arrs.reduce((s,a)=>s+a.length,0),o=new Uint8Array(n);let p=0;for(const a of arrs){o.set(a,p);p+=a.length}return o}function crc32(data){let c=0xffffffff;for(const b of data){c^=b;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0)}return (c^0xffffffff)>>>0}function zipStore(files){const parts=[],central=[];let offset=0;for(const f of files){const name=ascii(f.name,f.name.length),d=f.data,crc=crc32(d),lh=concatBytes(u32le(0x04034b50),u16le(20),u16le(0),u16le(0),u16le(0),u16le(0),u32le(crc),u32le(d.length),u32le(d.length),u16le(name.length),u16le(0),name,d);parts.push(lh);central.push(concatBytes(u32le(0x02014b50),u16le(20),u16le(20),u16le(0),u16le(0),u16le(0),u16le(0),u32le(crc),u32le(d.length),u32le(d.length),u16le(name.length),u16le(0),u16le(0),u16le(0),u16le(0),u32le(0),u32le(offset),name));offset+=lh.length}const cd=concatBytes(...central),body=concatBytes(...parts),end=concatBytes(u32le(0x06054b50),u16le(0),u16le(0),u16le(files.length),u16le(files.length),u32le(cd.length),u32le(body.length),u16le(0));return concatBytes(body,cd,end)}
 function dbfField(name,type,len,dec=0){return concatBytes(ascii(name,11),ascii(type,1),new Uint8Array(4),new Uint8Array([len,dec]),new Uint8Array(14))}function dbfText(v,len){const a=new TextEncoder().encode(String(v??'')),o=new Uint8Array(len);o.fill(32);o.set(a.slice(0,len));return o}
 function buildShapefile(list,bdlDataMap={}){
@@ -361,7 +332,7 @@ function buildShapefile(list,bdlDataMap={}){
  }
  dbf[dbf.length-1]=26;
  const prj=new TextEncoder().encode('GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.0174532925199433]]');
- return [{name:'NestMap.shp',data:concatBytes(...shp)},{name:'NestMap.shx',data:concatBytes(...shx)},{name:'NestMap.dbf',data:dbf},{name:'NestMap.prj',data:prj},{name:'NestMap.cpg',data:new TextEncoder().encode('UTF-8')}]
+ return [{name:'NestMap.shp',data:concatBytes(...shp)},{name:'NestMap.shx',data:concatBytes(...shx)},{name:'NestMap.dbf',data:dbf},{name:'NestMap.prj',data:prj}]
 }
 async function exportSHP(){
  const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));
@@ -372,30 +343,17 @@ async function exportSHP(){
  for(const n of list){try{const g=await reverseGeocode(n.lat,n.lon);n._exportPlace=g.miejscowosc||'';n._exportGmina=g.gmina||'';n._exportWoj=g.wojewodztwo||''}catch{n._exportPlace='';n._exportGmina='';n._exportWoj=''}}
  const files=buildShapefile(list,bdlDataMap);list.forEach(n=>{delete n._exportPlace;delete n._exportGmina;delete n._exportWoj});
  if(!files)return alert('Brak gniazd spełniających wybrane filtry.');
- $('mapStatus').textContent='';await shareOrDownload(new Blob([zipStore(files)],{type:'application/zip'}),'NestMap_SHP.zip');
+ $('mapStatus').textContent='';downloadBlob(zipStore(files),'NestMap_SHP.zip','application/zip')
 }
-async function exportGPX(){
+function exportGPX(){
  const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));
  if(!list.length)return alert('Brak gniazd spełniających wybrane filtry.');
  const escXml=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
  const w=list.map(n=>{const nm=n.label||'gniazdo',species=n.bird||'';const name=species?`${nm} — ${species}`:nm;return `<wpt lat="${Number(n.lat).toFixed(6)}" lon="${Number(n.lon).toFixed(6)}"><name>${escXml(name)}</name></wpt>`}).join('');
  const gpx=`<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="NestMap" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>NestMap</name></metadata>${w}</gpx>`;
- await shareOrDownload(new Blob([gpx],{type:'application/gpx+xml'}),'NestMap.gpx');
+ downloadBlob(gpx,'NestMap.gpx','application/gpx+xml');
 }
-async function shareOrDownload(blob,name){
- try{
-  const file=new File([blob],name,{type:blob.type||'application/octet-stream'});
-  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
-   await navigator.share({title:name,text:`NestMap — ${name}`,files:[file]});
-   return true;
-  }
- }catch(e){
-  if(e?.name==='AbortError')return false;
-  console.warn('Udostępnianie pliku:',e);
- }
- const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);return true;
-}
-function downloadBlob(data,name,type){return shareOrDownload(new Blob([data],{type}),name)}
+function downloadBlob(data,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
 function applyAreaExport(){window.__nmExportBounds=map.getBounds();alert('Ustawiono eksport dla obecnie widocznego fragmentu mapy. CSV, KMZ i SHP będą ograniczone do tego obszaru.')}
 $('menuBtn').onclick=()=>{$('menuPanel').hidden=false};$('closeMenu').onclick=()=>{$('menuPanel').hidden=true};$('mapTypeBtn').onclick=()=>{if(bdlEnabled)return;const b=$('mapTypeBtn');if(map.hasLayer(window.__nmImagery)){map.removeLayer(window.__nmImagery);window.__nmStreets.addTo(map);baseMapMode='streets';b.textContent='🗺️ Mapa ulic'}else{map.removeLayer(window.__nmStreets);window.__nmImagery.addTo(map);baseMapMode='imagery';b.textContent='🛰️ Ortofotomapa'}};$('bdlBtn').onclick=toggleBDL;$('locateBtn').onclick=locatePhone;$('offlineBtn').onclick=prepareOfflineMap;$('registerBtn').onclick=registerNest;$('closeNest').onclick=closeNest;$('saveControl').onclick=saveCurrent;$('cancelNest').onclick=cancelCurrentNest;$('exportCsv').onclick=exportCSV;$('exportKmz').onclick=exportKMZ;$('exportShp').onclick=exportSHP;$('exportGpx').onclick=exportGPX;$('exportCurrentArea').onclick=applyAreaExport;$('deleteVisibleBtn').onclick=deleteVisibleNests;$('countSpeciesBtn').onclick=countSpecies;$('toggleNestsBtn').onclick=()=>{markersVisible=false;renderMarkers()};$('revealNestsBtn').onclick=()=>{markersVisible=true;nests.forEach(n=>n.hidden=false);save();renderMarkers();if(currentNestId){const b=$('nestVisibilityBtn');if(b)b.textContent='Ukryj gniazdo'}};$('nestSearch').oninput=e=>{speciesQuery=e.target.value;renderSpeciesFilter();renderMarkers()};$('showAllNests').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};$('clearNestFilter').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};if($('yearFilter'))$('yearFilter').onchange=e=>{filterYear=e.target.value;renderMarkers()};
 initMap();startContinuousLocation();renderYearFilter();renderSpeciesFilter();
