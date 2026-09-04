@@ -27,7 +27,7 @@ function initMap(){
  const bdlWmts='https://mapserver.bdl.lasy.gov.pl/arcgis/rest/services/WMTS_BDL_mapa_drzewostanow/MapServer/tile/{z}/{y}/{x}';
  bdlWmtsLayer=L.tileLayer(bdlWmts,{minZoom:6,maxZoom:19,minNativeZoom:6,maxNativeZoom:17,tileSize:256,opacity:1,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'BDL · Lasy Państwowe'}).setZIndex(405);
  // Keep legacy WMS objects only for compatibility; they are NOT added to the map.
- bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11,9,7',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,tileSize:256}).setZIndex(404);
+ bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,tileSize:256}).setZIndex(404);
  bdlCompartmentBoundaryLayer=null;
  bdlSubareaBoundaryLayer=null;
  // Keep a group variable for compatibility with the rest of the app.
@@ -94,9 +94,9 @@ function bdlQueryUrl(layerId, params){
 }
 function setBDLBoundaryLayer(){
  if(!bdlEnabled||!map)return;
- // BDL's WMTS contains the official coloured cartography AND baked-in labels.
- // To make the "Napisy BDL" switch actually work, use the matching WMS
- // colour layers when labels are disabled; those layers have no text labels.
+ // WMTS contains the official coloured BDL cartography with baked-in labels.
+ // When labels are disabled, switch to the same BDL stand layer through WMS
+ // (layer 11 has Has Labels=false), so the colours remain but text disappears.
  const wantLabels=!!bdlLabelsVisible;
  if(wantLabels){
    if(bdlForestWms&&map.hasLayer(bdlForestWms))map.removeLayer(bdlForestWms);
@@ -104,6 +104,10 @@ function setBDLBoundaryLayer(){
  }else{
    if(bdlWmtsLayer&&map.hasLayer(bdlWmtsLayer))map.removeLayer(bdlWmtsLayer);
    if(bdlForestWms&&!map.hasLayer(bdlForestWms))bdlForestWms.addTo(map);
+ }
+ if(bdlLabelLayer){
+   if(wantLabels){ if(!map.hasLayer(bdlLabelLayer))bdlLabelLayer.addTo(map); }
+   else if(map.hasLayer(bdlLabelLayer)) map.removeLayer(bdlLabelLayer);
  }
 }
 
@@ -124,23 +128,25 @@ async function refreshBDLVectorOverlay(){
   if(seq!==bdlVectorSeq)return;
   const subs=z>=13?await q(5,'adress_forest,subarea_id,site_type_cd,species_cd_d,part_cd,species_age,a_year'):[];
   if(seq!==bdlVectorSeq)return;
-  const stands=[]; // official WMTS provides the coloured polygons
-  if(seq!==bdlVectorSeq)return;
-  if(bdlVectorLayer)map.removeLayer(bdlVectorLayer); if(bdlLabelLayer)map.removeLayer(bdlLabelLayer);
+  if(bdlVectorLayer)map.removeLayer(bdlVectorLayer);
+  if(bdlLabelLayer)map.removeLayer(bdlLabelLayer);
   const boundary=L.layerGroup(), labels=L.layerGroup();
-  // Colour fill, official labels and scale-dependent cartography come from WMTS.
   comps.forEach(f=>{
-   const p=bdlFeatureAttributes(f), gj=L.geoJSON(f,{style:{color:'#666',weight:1,opacity:.85,fill:false},interactive:true});
+   const p=bdlFeatureAttributes(f);
+   const gj=L.geoJSON(f,{style:{color:'#555',weight:1,opacity:.85,fill:false},interactive:true});
    gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); boundary.addLayer(gj);
   });
   subs.forEach(f=>{
-   const p=bdlFeatureAttributes(f), gj=L.geoJSON(f,{style:{color:'#444',weight:1,opacity:.9,fill:false},interactive:true});
+   const p=bdlFeatureAttributes(f);
+   const gj=L.geoJSON(f,{style:{color:'#444',weight:1,opacity:.9,fill:false},interactive:true});
    gj.eachLayer(l=>l.on('click',e=>{L.DomEvent.stopPropagation(e);showBDLAtPoint(e.latlng)})); boundary.addLayer(gj);
   });
   bdlVectorLayer=boundary; bdlLabelLayer=labels;
-  bdlVectorLayer.addTo(map); labels.addTo(map);
+  bdlVectorLayer.addTo(map);
+  if(bdlLabelsVisible) bdlLabelLayer.addTo(map);
  }catch(e){console.warn('BDL overlay',e)}
 }
+
 function bdlFeatureAttributes(f){return f?.attributes||f?.properties||{}}
 function showBDLFeature(f,latlng){showBDLAtPoint(latlng)}
 function parseBDLSpeciesDescription(raw){
@@ -236,18 +242,29 @@ async function showBDLAtPoint(latlng){
   const j=await r.json(); if(seq!==bdlRequestSeq)return;
   const general=j.features?.[0]?.attributes||null;
   if(!general){$('mapStatus').textContent='W tym miejscu nie znaleziono wydzielenia BDL.';closeBDLInfo();return}
-  // The mBDL service itself already contains the complete composition in
-  // storey_species_desc (up to 1600 characters). Do NOT replace it with the
-  // single dominant species from the thematic map layer.
-  const parsed=parseBDLSpeciesDescription(general.storey_species_desc);
-  if(!parsed.length && general.storey_species_desc){
-    console.warn('BDL: nie udało się sparsować storey_species_desc',general.storey_species_desc);
-  }
-  showBDLInfo(general,parsed);
+
+  // The thematic stand layer contains one record per species/storey for the
+  // same stand. Query the point against layer 11 and pass ALL intersecting
+  // records to the popup. This avoids the old single-dominant-species result.
+  let species=[];
+  try{
+    const spParams=new URLSearchParams({...common,outFields:'species_cd,part_cd,species_age,storey_cd,storey_rank_order,lit,gat_grp,grp_age,grp_age_int,adress_forest',returnGeometry:'false'});
+    const sr=await fetch(bdlQueryUrl(11,spParams),{cache:'no-store'});
+    if(sr.ok){
+      const sj=await sr.json();
+      species=(sj.features||[]).map(f=>bdlFeatureAttributes(f))
+        .filter(a=>a.species_cd||a.storey_cd)
+        .sort((a,b)=>(Number(a.storey_rank_order)||999)-(Number(b.storey_rank_order)||999));
+    }
+  }catch(e){console.warn('BDL species query',e)}
+
+  if(seq!==bdlRequestSeq)return;
+  showBDLInfo(general,species);
   $('mapStatus').textContent=`BDL: ${general.adress_forest||'wydzielenie'}`;
  }catch(e){console.warn(e);$('mapStatus').textContent='Nie udało się pobrać danych BDL. Sprawdź połączenie z internetem.'}
  finally{bdlBusy=false}
 }
+
 function startContinuousLocation(){if(!navigator.geolocation)return;watchId=navigator.geolocation.watchPosition(p=>{userPos=[p.coords.latitude,p.coords.longitude]},()=>{},{enableHighAccuracy:true,maximumAge:5000,timeout:15000})}
 function distMeters(a,b){const R=6371000,rad=Math.PI/180,dLat=(b[0]-a[0])*rad,dLon=(b[1]-a[1])*rad;const x=Math.sin(dLat/2)**2+Math.cos(a[0]*rad)*Math.cos(b[0]*rad)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
 async function prepareOfflineMap(){if(!map)return;const z0=Math.max(8,Math.floor(map.getZoom())-2),z1=Math.min(17,Math.floor(map.getZoom())+2),b=map.getBounds();let jobs=[];for(let z=z0;z<=z1;z++){const n=2**z,x1=Math.floor((b.getWest()+180)/360*n),x2=Math.floor((b.getEast()+180)/360*n),y1=Math.floor((1-Math.asinh(Math.tan(b.getNorth()*Math.PI/180))/Math.PI)/2*n),y2=Math.floor((1-Math.asinh(Math.tan(b.getSouth()*Math.PI/180))/Math.PI)/2*n);for(let x=x1;x<=x2;x++){const xx=((x%n)+n)%n;for(let y=y1;y<=y2;y++)if(y>=0&&y<n)jobs.push({z,x:xx,y})}}if(jobs.length>500)return alert(`Obszar za duży (${jobs.length} kafelków). Przybliż mapę.`);let done=0;for(const j of jobs){try{const u=`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${j.z}/${j.y}/${j.x}`,r=await fetch(u);if(r.ok)await putCachedTile(`imagery/${j.z}/${j.x}/${j.y}`,await r.blob())}catch{}$('mapStatus').textContent=`Mapa offline: ${++done}/${jobs.length}`}alert('Gotowe. Przygotowano mapę offline dla widocznego obszaru.')}
