@@ -92,3 +92,51 @@ html,body{width:100%;max-width:100%;overflow-x:hidden;overscroll-behavior-x:none
 body{min-width:0;}
 main,#mapWrap,.mapCard,.card{min-width:0;max-width:100%;overflow-x:hidden;}
 #map{max-width:100%;}
+
+/* NestMap v8.21.30: keep the document viewport fixed horizontally on iPhone.
+   Only Leaflet's map surface is allowed to pan/zoom. */
+html,body{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  overflow-x:hidden;
+  overscroll-behavior-x:none;
+}
+body{
+  position:relative;
+  left:0;
+  right:0;
+}
+main{
+  width:100%;
+  max-width:980px;
+  min-width:0;
+  overflow-x:hidden;
+}
+.card,.mapCard,#mapWrap{
+  min-width:0;
+  max-width:100%;
+  overflow-x:hidden;
+}
+.sectionHead{
+  min-width:0;
+}
+.sectionHead>*{
+  min-width:0;
+  max-width:100%;
+}
+.mapMode span{
+  min-width:0;
+}
+#mapWrap{
+  position:relative;
+}
+#map{
+  width:100%;
+  max-width:100%;
+  overflow:hidden;
+  touch-action:none;
+}
+.leaflet-container{
+  touch-action:none;
+}

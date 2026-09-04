@@ -183,14 +183,16 @@ function bdlPopupHtml(g,species){
  const general=[row('Adres leśny',a.adress_forest),row('Forma własności',a.owner_cat_name),row('RDLP',a.region_name),row('Nadleśnictwo',a.inspectorate_name),row('Obręb',a.forest_dist_name),row('Leśnictwo',a.forest_range_name),row('Województwo',a.county_name),row('Powiat',a.district_name),row('Gmina',a.municipality_name),row('Obręb ewidencyjny',a.community_name),row('Oddział i wydzielenie',[a.compartment_cd,a.subarea_cd].filter(Boolean).join('')),row('Stan na rok',a.a_year)].join('');
  const dane=[row('Powierzchnia (ha)',a.sub_area),row('Gospodarstwo',a.silviculture_cd),row('Wiek rębności',a.rotation_age),row('Rodzaj powierzchni',a.area_type_cd),row('Budowa pionowa',a.stand_struct_cd),row('TSL',a.site_type_cd),row('Stopień degradacji',a.degradation_cd),row('Uwodnienie',a.moisture_name),row('Typ gleby',a.soil_subtype_cd),row('Pokrywa',a.veg_cover_name),row('Zespół roślinny',a.plant_comm_name),row('Kategoria ochronności',a.prot_category_name),row('Funkcja lasu',a.forest_func_name),row('Siedlisko przyrodnicze',a.arod_prot_site_desc),row('Przyczyna uszkodzenia',a.cause_cd),row('Procent uszkodzenia',a.damage_degree)].join('');
  let speciesHtml='';
- // For the NestMap view we intentionally show the main/recorded tree species
- // and its age, while keeping the full address and general stand data above.
- // The official mBDL layer exposes species_cd and species_age for this purpose.
- const mainSpecies=a.species_cd_d||a.species_cd||'';
- if(mainSpecies || a.species_age!==null && a.species_age!==undefined || a.part_cd){
-   speciesHtml=`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Gatunek główny',mainSpecies)}${row('Udział',a.part_cd)}${row('Wiek',a.species_age)}${row('Warstwa','DRZEW')}</div></div>`;
+ const parsed=Array.isArray(species)?species:[];
+ if(parsed.length){
+   speciesHtml=parsed.map(x=>`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',x.layer||'—')}${row('Gatunek',x.speciesCode)}${row('Udział',x.part)}${row('Wiek',x.age)}${row('D13',x.d13)}${row('H',x.h)}${row('Bonitacja',x.bon)}${row('Zasobność',x.zas)}</div></div>`).join('');
+ }else{
+   const mainSpecies=a.species_cd||'';
+   if(mainSpecies || a.species_age!==null && a.species_age!==undefined){
+     speciesHtml=`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa','DRZEW')}${row('Gatunek główny',mainSpecies)}${row('Wiek',a.species_age)}</div></div>`;
+   }
  }
- if(!speciesHtml){speciesHtml='<div class="muted">Brak danych o gatunku głównym.</div>';}
+ if(!speciesHtml)speciesHtml='<div class="muted">Brak danych o gatunkach.</div>';
  const section=(title,id,body,open)=>`<button type="button" class="bdlSectionTitle bdlSectionToggle" data-bdl-section="${id}" aria-expanded="${open?'true':'false'}">${title}<span class="bdlChevron">${open?'▾':'▸'}</span></button><div id="${id}" class="bdlSectionBody" ${open?'':'hidden'}>${body}</div>`;
  return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div>${section('ADRES','bdlAdresBody',`<div class="bdlRows">${general}</div>`,true)}${section('DANE OGÓLNE','bdlDaneBody',`<div class="bdlRows">${dane}</div>`,false)}${section('DRZEWA','bdlGatunkiBody',speciesHtml,false)}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
 }
@@ -212,18 +214,28 @@ async function showBDLAtPoint(latlng){
  if(!bdlEnabled||bdlBusy)return;
  const seq=++bdlRequestSeq;bdlBusy=true;$('mapStatus').textContent='Pobieram opis wydzielenia z BDL…';
  try{
-  const common={where:'1=1',geometry:`${latlng.lng},${latlng.lat}`,geometryType:'esriGeometryPoint',inSR:'4326',spatialRel:'esriSpatialRelIntersects',returnGeometry:'false',f:'json'};
-  const p=new URLSearchParams({...common,outFields:'*'});
-  const r=await fetch(`${BDL_VECTOR_URL}?${p}`,{cache:'no-store'}); if(!r.ok)throw new Error('BDL HTTP');
+  const p=new URLSearchParams({
+   where:'1=1',
+   geometry:`${latlng.lng},${latlng.lat}`,
+   geometryType:'esriGeometryPoint',
+   inSR:'4326',
+   spatialRel:'esriSpatialRelIntersects',
+   distance:'25',
+   units:'esriSRUnit_Meter',
+   outFields:'*',
+   returnGeometry:'false',
+   resultRecordCount:'1',
+   f:'json'
+  });
+  const r=await fetch(`${BDL_VECTOR_URL}?${p}`,{cache:'no-store'});
+  if(!r.ok)throw new Error('BDL HTTP');
   const j=await r.json(); if(seq!==bdlRequestSeq)return;
   const general=j.features?.[0]?.attributes||null;
   if(!general){$('mapStatus').textContent='W tym miejscu nie znaleziono wydzielenia BDL.';closeBDLInfo();return}
 
-  // Do not use the thematic map layer for the species list. Layer 11 is the
-  // coloured cartography and may expose only the dominant mapped species.
-  // The complete composition is carried by storey_species_desc in the mBDL
-  // description layer queried above.
-  const species=[];
+  // The mBDL description layer contains the complete species composition
+  // in storey_species_desc. Parse it for the vertical DRZEW/PODSZ/NAL list.
+  const species=parseBDLSpeciesDescription(general.storey_species_desc||'');
 
   if(seq!==bdlRequestSeq)return;
   showBDLInfo(general,species);
@@ -281,12 +293,31 @@ function csvEscape(v){return '"'+String(v??'').replaceAll('"','""')+'"'}
 async function reverseGeocode(lat,lon){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,{headers:{'Accept-Language':'pl'}});const j=await r.json(),a=j.address||{};return {miejscowosc:a.village||a.town||a.city||a.hamlet||'',gmina:String(a.municipality||a.city_district||'').replace(/^gmina\s+/i,'').trim(),wojewodztwo:String(a.state||'').replace(/^województwo\s+/i,'').trim()}}catch{return {miejscowosc:'',gmina:'',wojewodztwo:''}}}
 async function fetchBDLExportData(n){
  try{
-  const fields='adress_forest,compartment_cd,subarea_cd,species_cd_d,species_cd,species_age,site_type_cd,storey_species_desc,a_year';
-  const p=new URLSearchParams({where:'1=1',geometry:`${n.lon},${n.lat}`,geometryType:'esriGeometryPoint',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:fields,returnGeometry:'false',f:'json'});
-  const r=await fetch(`${BDL_VECTOR_URL}?${p}`,{cache:'no-store'});if(!r.ok)throw new Error('BDL export HTTP '+r.status);
-  const j=await r.json();const a=j.features?.[0]?.attributes||{};
+  // The official mBDL description layer is in EPSG:2180. ArcGIS performs the
+  // WGS84 -> EPSG:2180 transformation when inSR=4326 is supplied. A small
+  // search radius makes the lookup robust when the saved nest coordinate is
+  // close to a stand boundary.
+  const fields='adress_forest,compartment_cd,subarea_cd,species_cd,species_age,site_type_cd,storey_species_desc,a_year';
+  const params=new URLSearchParams({
+   where:'1=1',
+   geometry:`${n.lon},${n.lat}`,
+   geometryType:'esriGeometryPoint',
+   inSR:'4326',
+   spatialRel:'esriSpatialRelIntersects',
+   distance:'25',
+   units:'esriSRUnit_Meter',
+   outFields:fields,
+   returnGeometry:'false',
+   resultRecordCount:'1',
+   f:'json'
+  });
+  const r=await fetch(`${BDL_VECTOR_URL}?${params}`,{cache:'no-store'});
+  if(!r.ok)throw new Error('BDL export HTTP '+r.status);
+  const j=await r.json();
+  const a=j.features?.[0]?.attributes||{};
+  if(!Object.keys(a).length)throw new Error('BDL: brak wydzielenia dla punktu');
   const parts=String(a.adress_forest||'').split('-').map(x=>x.trim()).filter(Boolean);
-  const species=a.species_cd_d||a.species_cd||'';
+  const species=a.species_cd||'';
   const age=a.species_age??'';
   const tsl=a.site_type_cd||'';
   return {
@@ -298,7 +329,10 @@ async function fetchBDLExportData(n){
    bdlSpeciesDesc:a.storey_species_desc||'',
    bdlYear:a.a_year??''
   };
- }catch(e){console.warn('BDL export data:',e);return {bdlAddress:'',bdlCompartment:'',bdlAge:'',bdlSpecies:'',bdlTSL:'',bdlSpeciesDesc:'',bdlYear:''}}
+ }catch(e){
+  console.warn('BDL export data:',e);
+  return {bdlAddress:'',bdlCompartment:'',bdlAge:'',bdlSpecies:'',bdlTSL:'',bdlSpeciesDesc:'',bdlYear:''}
+}
 }
 async function exportCSV(){
  const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));
@@ -383,17 +417,30 @@ async function exportGPX(){
  await shareOrDownload(new Blob([gpx],{type:'application/gpx+xml'}),'NestMap.gpx');
 }
 async function shareOrDownload(blob,name){
+ const shareType='application/octet-stream';
  try{
-  const file=new File([blob],name,{type:blob.type||'application/octet-stream'});
-  if(navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
-   await navigator.share({title:name,text:`NestMap — ${name}`,files:[file]});
+  // iOS Safari is more reliable when the attachment is presented as a
+  // generic file while the original filename/extension is preserved.
+  const file=new File([blob],name,{type:shareType,lastModified:Date.now()});
+  if(typeof navigator.share==='function'){
+   // Do not gate this on navigator.canShare(): iOS Safari has reported false
+   // for some valid attachment types even though navigator.share can send them.
+   await navigator.share({files:[file]});
    return true;
   }
  }catch(e){
   if(e?.name==='AbortError')return false;
   console.warn('Udostępnianie pliku:',e);
  }
- const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);return true;
+ // No synthetic "text" file: if the Web Share API is unavailable, create
+ // exactly one download with the requested filename.
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement('a');
+ a.href=url;a.download=name;a.rel='noopener';
+ a.style.display='none';
+ document.body.appendChild(a);a.click();
+ setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},3000);
+ return true;
 }
 function downloadBlob(data,name,type){return shareOrDownload(new Blob([data],{type}),name)}
 function applyAreaExport(){window.__nmExportBounds=map.getBounds();alert('Ustawiono eksport dla obecnie widocznego fragmentu mapy. CSV, KMZ i SHP będą ograniczone do tego obszaru.')}
