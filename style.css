@@ -85,3 +85,10 @@ html,body{width:100%;max-width:100%;overflow-x:hidden}main{width:100%;max-width:
 .bdlInfoPanel .bdlSectionBody{touch-action:pan-y;}
 .bdlInfoPanel .bdlRows{touch-action:pan-y;}
 @media(max-width:600px){.bdlInfoPanel{max-height:calc(100% - 12px);padding-bottom:18px;}}
+
+
+/* v8.21.27: keep the application viewport anchored horizontally on iPhone/Safari. */
+html,body{width:100%;max-width:100%;overflow-x:hidden;overscroll-behavior-x:none;}
+body{min-width:0;}
+main,#mapWrap,.mapCard,.card{min-width:0;max-width:100%;overflow-x:hidden;}
+#map{max-width:100%;}

@@ -25,9 +25,9 @@ function initMap(){
  // coloured stand polygons, compartment labels and subarea labels at their
  // intended scales. The previous WMS overlay rendered only outlines in Safari.
  const bdlWmts='https://mapserver.bdl.lasy.gov.pl/arcgis/rest/services/WMTS_BDL_mapa_drzewostanow/MapServer/tile/{z}/{y}/{x}';
- bdlWmtsLayer=L.tileLayer(bdlWmts,{minZoom:6,maxZoom:19,minNativeZoom:6,maxNativeZoom:17,tileSize:256,opacity:1,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'BDL · Lasy Państwowe'}).setZIndex(405);
- // Keep legacy WMS objects only for compatibility; they are NOT added to the map.
- bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(405);
+ bdlWmtsLayer=L.tileLayer(bdlWmts,{minZoom:6,maxZoom:19,minNativeZoom:6,maxNativeZoom:17,tileSize:256,opacity:1,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true,crossOrigin:true,attribution:'BDL · Lasy Państwowe'}).setZIndex(400);
+ // Official BDL WMS is used only for the permanent labels/boundaries above the coloured WMTS.
+ bdlForestWms=L.tileLayer.wms(bdlWms,{layers:'11',styles:'',format:'image/png',transparent:true,version:'1.3.0',opacity:1,tileSize:256,keepBuffer:4,updateWhenZooming:false,updateWhenIdle:true}).setZIndex(450);
  bdlCompartmentBoundaryLayer=null;
  bdlSubareaBoundaryLayer=null;
  // Keep a group variable for compatibility with the rest of the app.
@@ -97,14 +97,14 @@ function bdlQueryUrl(layerId, params){
 }
 function setBDLBoundaryLayer(){
  if(!bdlEnabled||!map)return;
- // BDL labels are intentionally permanent: the user asked to remove the
- // "Napisy BDL" switch. Keep the official BDL layers 3 (oddziały), 5
- // (wydzielenia) and 11 (coloured drzewostany) together.
+ // The coloured WMTS is the map background. The official WMS layers 3 and 5
+ // are a transparent label overlay: 3 = compartments, 5 = subarea labels.
+ // They must never replace/remove the coloured WMTS.
+ if(bdlWmtsLayer&&!map.hasLayer(bdlWmtsLayer))bdlWmtsLayer.addTo(map);
  if(bdlForestWms){
-   bdlForestWms.setParams({layers:'3,5,11'},false);
+   bdlForestWms.setParams({layers:'3,5',styles:'',transparent:true,format:'image/png'},false);
    if(!map.hasLayer(bdlForestWms))bdlForestWms.addTo(map);
  }
- if(bdlWmtsLayer&&map.hasLayer(bdlWmtsLayer))map.removeLayer(bdlWmtsLayer);
  if(bdlLabelLayer&&map.hasLayer(bdlLabelLayer))map.removeLayer(bdlLabelLayer);
 }
 
@@ -183,21 +183,16 @@ function bdlPopupHtml(g,species){
  const general=[row('Adres leśny',a.adress_forest),row('Forma własności',a.owner_cat_name),row('RDLP',a.region_name),row('Nadleśnictwo',a.inspectorate_name),row('Obręb',a.forest_dist_name),row('Leśnictwo',a.forest_range_name),row('Województwo',a.county_name),row('Powiat',a.district_name),row('Gmina',a.municipality_name),row('Obręb ewidencyjny',a.community_name),row('Oddział i wydzielenie',[a.compartment_cd,a.subarea_cd].filter(Boolean).join('')),row('Stan na rok',a.a_year)].join('');
  const dane=[row('Powierzchnia (ha)',a.sub_area),row('Gospodarstwo',a.silviculture_cd),row('Wiek rębności',a.rotation_age),row('Rodzaj powierzchni',a.area_type_cd),row('Budowa pionowa',a.stand_struct_cd),row('TSL',a.site_type_cd),row('Stopień degradacji',a.degradation_cd),row('Uwodnienie',a.moisture_name),row('Typ gleby',a.soil_subtype_cd),row('Pokrywa',a.veg_cover_name),row('Zespół roślinny',a.plant_comm_name),row('Kategoria ochronności',a.prot_category_name),row('Funkcja lasu',a.forest_func_name),row('Siedlisko przyrodnicze',a.arod_prot_site_desc),row('Przyczyna uszkodzenia',a.cause_cd),row('Procent uszkodzenia',a.damage_degree)].join('');
  let speciesHtml='';
- const renderLayerSpecies=(items)=>items.map(x=>{
-   const p=bdlFeatureAttributes(x);
-   return `<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',p.storey_cd)}${row('Gatunek',p.species_cd)}${row('Udział',p.part_cd)}${row('Wiek',p.species_age)}${row('D13',p.d13)}${row('H',p.h)}${row('Bonitacja',p.bon)}${row('Zasobność',p.zas)}${p.lit?row('Pozostałe dane BDL',p.lit):''}</div></div>`;
- }).join('');
- // The mBDL service stores the complete species composition in
- // storey_species_desc. It must be the primary source here; querying the
- // coloured map layer returns only the mapped/dominant stand representation.
- if(a.storey_species_desc){
-   const parsed=parseBDLSpeciesDescription(a.storey_species_desc);
-   if(parsed.length)speciesHtml=parsed.map(x=>`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Warstwa',x.layer)}${row('Gatunek',x.speciesCode)}${row('Udział',x.part)}${row('Wiek',x.age)}${row('D13',x.d13)}${row('H',x.h)}${row('Bonitacja',x.bon)}${row('Zasobność',x.zas)}${x.extra?row('Pozostałe dane BDL',x.extra):''}</div></div>`).join('');
+ // For the NestMap view we intentionally show the main/recorded tree species
+ // and its age, while keeping the full address and general stand data above.
+ // The official mBDL layer exposes species_cd and species_age for this purpose.
+ const mainSpecies=a.species_cd_d||a.species_cd||'';
+ if(mainSpecies || a.species_age!==null && a.species_age!==undefined || a.part_cd){
+   speciesHtml=`<div class="bdlSpeciesBlock"><div class="bdlRows">${row('Gatunek główny',mainSpecies)}${row('Udział',a.part_cd)}${row('Wiek',a.species_age)}${row('Warstwa','DRZEW')}</div></div>`;
  }
- if(!speciesHtml&&species?.length)speciesHtml=renderLayerSpecies(species);
- if(!speciesHtml){const raw=String(a.storey_species_desc||'').trim();speciesHtml=raw?`<div class="bdlRawSpecies">${esc(raw).replace(/;/g,';<br>')}</div>`:'<div class="muted">Brak szczegółowych danych o gatunkach.</div>';}
+ if(!speciesHtml){speciesHtml='<div class="muted">Brak danych o gatunku głównym.</div>';}
  const section=(title,id,body,open)=>`<button type="button" class="bdlSectionTitle bdlSectionToggle" data-bdl-section="${id}" aria-expanded="${open?'true':'false'}">${title}<span class="bdlChevron">${open?'▾':'▸'}</span></button><div id="${id}" class="bdlSectionBody" ${open?'':'hidden'}>${body}</div>`;
- return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div>${section('ADRES','bdlAdresBody',`<div class="bdlRows">${general}</div>`,true)}${section('DANE OGÓLNE','bdlDaneBody',`<div class="bdlRows">${dane}</div>`,false)}${section('GATUNKI','bdlGatunkiBody',speciesHtml,false)}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
+ return `<div class="bdlPanelHead"><h3>Opis taksacyjny</h3><button type="button" class="bdlClose" aria-label="Zamknij opis">×</button></div>${section('ADRES','bdlAdresBody',`<div class="bdlRows">${general}</div>`,true)}${section('DANE OGÓLNE','bdlDaneBody',`<div class="bdlRows">${dane}</div>`,false)}${section('DRZEWA','bdlGatunkiBody',speciesHtml,false)}<div class="bdlSource">Źródło: Bank Danych o Lasach · dane online</div>`;
 }
 function showBDLInfo(g,species){const p=ensureBDLInfoPanel();p.innerHTML=bdlPopupHtml(g,species);p.hidden=false;const c=p.querySelector('.bdlClose');if(c)c.onclick=e=>{e.stopPropagation();closeBDLInfo()};p.querySelectorAll('.bdlSectionToggle').forEach(b=>b.onclick=e=>{e.stopPropagation();const body=p.querySelector('#'+b.dataset.bdlSection);if(!body)return;const open=body.hidden;body.hidden=!open;b.setAttribute('aria-expanded',String(open));const ch=b.querySelector('.bdlChevron');if(ch)ch.textContent=open?'▾':'▸'});p.onclick=e=>e.stopPropagation();}
 function webMercator(lat,lon){
