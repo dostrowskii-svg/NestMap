@@ -419,30 +419,21 @@ async function exportGPX(){
  await shareOrDownload(new Blob([gpx],{type:'application/gpx+xml'}),'NestMap.gpx');
 }
 async function shareOrDownload(blob,name){
- // Keep the real MIME type. iOS Share Sheet/Gmail can reject KMZ/GPX when
- // everything is incorrectly labelled application/octet-stream.
  const shareType=blob.type||'application/octet-stream';
  try{
   const file=new File([blob],name,{type:shareType,lastModified:Date.now()});
-  if(typeof navigator.share==='function'){
-   // Prefer a real file share. canShare is only advisory on Safari, so when
-   // available we use it to avoid opening a share sheet that cannot accept
-   // the attachment, but still try navigator.share when canShare is absent.
-   const canShareFiles=typeof navigator.canShare!=='function' || navigator.canShare({files:[file]});
-   if(canShareFiles){
-    await navigator.share({files:[file],title:name});
-    return true;
-   }
+  if(typeof navigator.share==='function' && (typeof navigator.canShare!=='function' || navigator.canShare({files:[file]}))){
+   // iOS Safari/Gmail is much more reliable when the share payload contains ONLY files.
+   await navigator.share({files:[file]});
+   return true;
   }
  }catch(e){
   if(e?.name==='AbortError')return false;
   console.warn('Udostępnianie pliku:',e);
  }
- // Fallback: save exactly one correctly named file. No synthetic text file.
  const url=URL.createObjectURL(blob);
  const a=document.createElement('a');
- a.href=url;a.download=name;a.rel='noopener';a.type=shareType;
- a.style.display='none';
+ a.href=url;a.download=name;a.rel='noopener';a.style.display='none';
  document.body.appendChild(a);a.click();
  setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},5000);
  return true;
