@@ -285,7 +285,7 @@ function renderHistory(n){const p=$('historyPanel');p.hidden=!p.hidden;if(p.hidd
 function renderTabs(){document.querySelectorAll('.tab').forEach((b,i)=>{b.classList.toggle('active',i===currentControl);b.onclick=()=>{currentControl=i;const n=nests.find(x=>x.id===currentNestId);const c=n?.controls?.[i]||blankControl();editing=!!n?.draft || !c.saved;renderTabs();renderControl()}})}
 function cancelCurrentNest(){const n=nests.find(x=>x.id===currentNestId);if(!n)return;if(n.draft&&!n.bird){nests=nests.filter(x=>x.id!==currentNestId);save();$('mapMode').hidden=false;closeNest();return}editing=false;renderControl()}
 function closeNest(){const n=currentNestId?nests.find(x=>x.id===currentNestId):null;if(n?.draft){nests=nests.filter(x=>x.id!==currentNestId);save()}currentNestId=null;$('nestCard').hidden=true;$('mapMode').hidden=false;$('historyPanel').hidden=true;renderMarkers();map.invalidateSize();window.scrollTo({top:0,behavior:'smooth'})}
-function registerNest(){const c=map.getCenter(),id=crypto.randomUUID?crypto.randomUUID():String(Date.now());const n={id,lat:Number(c.lat.toFixed(6)),lon:Number(c.lng.toFixed(6)),bird:'',birdCode:'',label:'',number:'',controls:[blankControl(),blankControl(),blankControl(),blankControl()],seasons:{},draft:true};nests.push(n);currentNestId=id;$('mapMode').hidden=true;openNest(id);requestAnimationFrame(()=>{const card=$('nestCard');if(card){card.hidden=false;card.scrollIntoView({behavior:'smooth',block:'start'})}})}
+function registerNest(){const c=map.getCenter(),id=crypto.randomUUID?crypto.randomUUID():String(Date.now());const n={id,lat:Number(c.lat.toFixed(6)),lon:Number(c.lng.toFixed(6)),bird:'',birdCode:'',label:'',number:'',controls:[blankControl(),blankControl(),blankControl(),blankControl()],seasons:{},draft:true};nests.push(n);currentNestId=id;$('mapMode').hidden=true;openNest(id);requestAnimationFrame(()=>{const card=$('nestCard');if(card){card.hidden=false;const top=Math.max(0,card.getBoundingClientRect().top+window.scrollY-8);window.scrollTo({left:0,top,behavior:'smooth'});document.documentElement.scrollLeft=0;document.body.scrollLeft=0}})}
 function deleteVisibleNests(){const b=map.getBounds();const candidates=nests.filter(n=>n.lat&&n.lon&&b.contains([n.lat,n.lon])&&!n.hidden);if(!candidates.length)return alert('W widocznym fragmencie mapy nie ma widocznych gniazd.');if(!confirm(`Usunąć ${candidates.length} gniazd z widocznego fragmentu mapy? Tej operacji nie można cofnąć.`))return;nests=nests.filter(n=>!(n.lat&&n.lon&&b.contains([n.lat,n.lon])&&!n.hidden));save();renderMarkers();alert(`Usunięto ${candidates.length} gniazd.`)}
 function countSpecies(){const box=$('speciesCountBox');if(!box)return;if(!box.hidden){box.hidden=true;return}const m={};nests.forEach(n=>{const k=n.bird||'bez gatunku';m[k]=(m[k]||0)+1});box.hidden=false;box.innerHTML=Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="speciesCountRow"><span>${esc(k)}</span><strong>${v}</strong></div>`).join('')}
 function getFilteredNests(){return nests.filter(n=>nestMatches(n))}
@@ -293,11 +293,10 @@ function csvEscape(v){return '"'+String(v??'').replaceAll('"','""')+'"'}
 async function reverseGeocode(lat,lon){try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,{headers:{'Accept-Language':'pl'}});const j=await r.json(),a=j.address||{};return {miejscowosc:a.village||a.town||a.city||a.hamlet||'',gmina:String(a.municipality||a.city_district||'').replace(/^gmina\s+/i,'').trim(),wojewodztwo:String(a.state||'').replace(/^województwo\s+/i,'').trim()}}catch{return {miejscowosc:'',gmina:'',wojewodztwo:''}}}
 async function fetchBDLExportData(n){
  try{
-  // The official mBDL description layer is in EPSG:2180. ArcGIS performs the
-  // WGS84 -> EPSG:2180 transformation when inSR=4326 is supplied. A small
-  // search radius makes the lookup robust when the saved nest coordinate is
-  // close to a stand boundary.
-  const fields='adress_forest,compartment_cd,subarea_cd,species_cd,species_age,site_type_cd,storey_species_desc,a_year';
+  // Use the same mBDL layer/query that powers the working on-map description.
+  // Requesting a hand-picked field list made the export fragile when BDL added
+  // or renamed a field.  Asking for all attributes keeps CSV/KMZ/SHP in sync
+  // with the description panel.
   const params=new URLSearchParams({
    where:'1=1',
    geometry:`${n.lon},${n.lat}`,
@@ -306,7 +305,7 @@ async function fetchBDLExportData(n){
    spatialRel:'esriSpatialRelIntersects',
    distance:'25',
    units:'esriSRUnit_Meter',
-   outFields:fields,
+   outFields:'*',
    returnGeometry:'false',
    resultRecordCount:'1',
    f:'json'
@@ -314,12 +313,14 @@ async function fetchBDLExportData(n){
   const r=await fetch(`${BDL_VECTOR_URL}?${params}`,{cache:'no-store'});
   if(!r.ok)throw new Error('BDL export HTTP '+r.status);
   const j=await r.json();
+  if(j.error)throw new Error(j.error.message||'BDL query error');
   const a=j.features?.[0]?.attributes||{};
   if(!Object.keys(a).length)throw new Error('BDL: brak wydzielenia dla punktu');
   const parts=String(a.adress_forest||'').split('-').map(x=>x.trim()).filter(Boolean);
-  const species=a.species_cd||'';
-  const age=a.species_age??'';
-  const tsl=a.site_type_cd||'';
+  // *_d is the dominant/main tree species in the mBDL description layer.
+  const species=a.species_cd_d||a.species_cd||'';
+  const age=a.species_age_d??a.species_age??'';
+  const tsl=a.site_type_cd||a.tsl_cd||a.site_type||'';
   return {
    bdlAddress:a.adress_forest||'',
    bdlCompartment:a.subarea_cd||parts[parts.length-1]||'',
@@ -331,9 +332,10 @@ async function fetchBDLExportData(n){
   };
  }catch(e){
   console.warn('BDL export data:',e);
-  return {bdlAddress:'',bdlCompartment:'',bdlAge:'',bdlSpecies:'',bdlTSL:'',bdlSpeciesDesc:'',bdlYear:''}
+  return {bdlAddress:'',bdlCompartment:'',bdlAge:'',bdlSpecies:'',bdlTSL:'',bdlSpeciesDesc:'',bdlYear:''};
+ }
 }
-}
+
 async function exportCSV(){
  const list=getFilteredNests().filter(n=>!window.__nmExportBounds||window.__nmExportBounds.contains([n.lat,n.lon]));
  if(!list.length)return alert('Brak gniazd spełniających wybrane filtry.');
@@ -417,31 +419,35 @@ async function exportGPX(){
  await shareOrDownload(new Blob([gpx],{type:'application/gpx+xml'}),'NestMap.gpx');
 }
 async function shareOrDownload(blob,name){
- const shareType='application/octet-stream';
+ // Keep the real MIME type. iOS Share Sheet/Gmail can reject KMZ/GPX when
+ // everything is incorrectly labelled application/octet-stream.
+ const shareType=blob.type||'application/octet-stream';
  try{
-  // iOS Safari is more reliable when the attachment is presented as a
-  // generic file while the original filename/extension is preserved.
   const file=new File([blob],name,{type:shareType,lastModified:Date.now()});
   if(typeof navigator.share==='function'){
-   // Do not gate this on navigator.canShare(): iOS Safari has reported false
-   // for some valid attachment types even though navigator.share can send them.
-   await navigator.share({files:[file]});
-   return true;
+   // Prefer a real file share. canShare is only advisory on Safari, so when
+   // available we use it to avoid opening a share sheet that cannot accept
+   // the attachment, but still try navigator.share when canShare is absent.
+   const canShareFiles=typeof navigator.canShare!=='function' || navigator.canShare({files:[file]});
+   if(canShareFiles){
+    await navigator.share({files:[file],title:name});
+    return true;
+   }
   }
  }catch(e){
   if(e?.name==='AbortError')return false;
   console.warn('Udostępnianie pliku:',e);
  }
- // No synthetic "text" file: if the Web Share API is unavailable, create
- // exactly one download with the requested filename.
+ // Fallback: save exactly one correctly named file. No synthetic text file.
  const url=URL.createObjectURL(blob);
  const a=document.createElement('a');
- a.href=url;a.download=name;a.rel='noopener';
+ a.href=url;a.download=name;a.rel='noopener';a.type=shareType;
  a.style.display='none';
  document.body.appendChild(a);a.click();
- setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},3000);
+ setTimeout(()=>{URL.revokeObjectURL(url);a.remove()},5000);
  return true;
 }
+
 function downloadBlob(data,name,type){return shareOrDownload(new Blob([data],{type}),name)}
 function applyAreaExport(){window.__nmExportBounds=map.getBounds();alert('Ustawiono eksport dla obecnie widocznego fragmentu mapy. CSV, KMZ i SHP będą ograniczone do tego obszaru.')}
 $('menuBtn').onclick=()=>{$('menuPanel').hidden=false};$('closeMenu').onclick=()=>{$('menuPanel').hidden=true};$('mapTypeBtn').onclick=()=>{if(bdlEnabled)return;const b=$('mapTypeBtn');if(map.hasLayer(window.__nmImagery)){map.removeLayer(window.__nmImagery);window.__nmStreets.addTo(map);baseMapMode='streets';b.textContent='🗺️ Mapa ulic'}else{map.removeLayer(window.__nmStreets);window.__nmImagery.addTo(map);baseMapMode='imagery';b.textContent='🛰️ Ortofotomapa'}};$('bdlBtn').onclick=toggleBDL;$('locateBtn').onclick=locatePhone;$('offlineBtn').onclick=prepareOfflineMap;$('registerBtn').onclick=registerNest;$('closeNest').onclick=closeNest;$('saveControl').onclick=saveCurrent;$('cancelNest').onclick=cancelCurrentNest;$('exportCsv').onclick=exportCSV;$('exportKmz').onclick=exportKMZ;$('exportShp').onclick=exportSHP;$('exportGpx').onclick=exportGPX;$('exportCurrentArea').onclick=applyAreaExport;$('deleteVisibleBtn').onclick=deleteVisibleNests;$('countSpeciesBtn').onclick=countSpecies;$('toggleNestsBtn').onclick=()=>{markersVisible=false;renderMarkers()};$('revealNestsBtn').onclick=()=>{markersVisible=true;nests.forEach(n=>n.hidden=false);save();renderMarkers();if(currentNestId){const b=$('nestVisibilityBtn');if(b)b.textContent='Ukryj gniazdo'}};$('nestSearch').oninput=e=>{speciesQuery=e.target.value;renderSpeciesFilter();renderMarkers()};$('showAllNests').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};$('clearNestFilter').onclick=()=>{$('nestSearch').value='';speciesQuery='';selectedSpeciesCodes.clear();filterYear='';renderYearFilter();renderSpeciesFilter();renderMarkers()};if($('yearFilter'))$('yearFilter').onchange=e=>{filterYear=e.target.value;renderMarkers()};
