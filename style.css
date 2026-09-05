@@ -140,3 +140,8 @@ main{
 .leaflet-container{
   touch-action:none;
 }
+
+/* v8.21.35: blokada poziomego przesuwania całej aplikacji; mapa pozostaje interaktywna */
+html,body{overflow-x:hidden;overscroll-behavior-x:none;}
+body{max-width:100vw;}
+@supports (overflow:clip){html,body{overflow-x:hidden;}}
